@@ -46,7 +46,7 @@ page = st.sidebar.selectbox("Choose a page", [
 
 
 
-if page == "📋 Registration":
+elif page == "📋 Registration":
     st.title("📋 Sunday School - Child Registration")
 
     with st.form("child_form"):
@@ -54,7 +54,7 @@ if page == "📋 Registration":
         gender = st.selectbox("Gender", ["Male", "Female"])
         dob = st.date_input("Date of Birth", min_value=date(2000, 1, 1), max_value=date.today())
         group = st.selectbox("Group/Class", [
-                "Chosen Generation(grade PP1–PP2)",
+            "Chosen Generation(grade PP1–PP2)",
             "Chosen Nation(grade 1–3)",
             "Priesthood (grade 4–6)",
             "Preisthood 2(grade 7–12)",
@@ -72,6 +72,9 @@ if page == "📋 Registration":
         contact1 = st.text_input("Contact for Parent 1")
         parent2 = st.text_input("Parent/Guardian 2 Name (optional)")
         contact2 = st.text_input("Contact for Parent 2")
+
+        # ✅ Sponsorship checkbox
+        sponsored = st.checkbox("Sponsored by OCM?")
 
         submitted = st.form_submit_button("Register Child")
 
@@ -92,7 +95,8 @@ if page == "📋 Registration":
                 "Parent 1": parent1,
                 "Contact 1": contact1,
                 "Parent 2": parent2,
-                "Contact 2": contact2
+                "Contact 2": contact2,
+                "Sponsored by OCM": "Yes" if sponsored else "No"
             }
 
             file_name = "children_records.csv"
@@ -109,7 +113,8 @@ if page == "📋 Registration":
                 sheet = gc.open("Sunday School registrations").sheet1
                 sheet.append_row([
                     full_name, gender, dob.strftime("%Y-%m-%d"), age, group, school, grade,
-                    residence, parent1, contact1, parent2, contact2
+                    residence, parent1, contact1, parent2, contact2,
+                    "Yes" if sponsored else "No"
                 ])
                 st.success(f"{full_name} (Age {age}) registered and saved successfully! (Also uploaded to Google Sheets)")
             except Exception as e:
@@ -274,6 +279,75 @@ elif page == "📊 Reports":
             )
         else:
             st.info("No data available for this child.")
+        st.subheader("📤 WhatsApp Summary Message")
+
+if os.path.exists("children_records.csv"):
+    children_df = pd.read_csv("children_records.csv")
+    all_kids = children_df["Full Name"].tolist()
+    total_kids = len(all_kids)
+
+    # Merge to get Group/Class info into attendance
+    att_df = att_df.merge(children_df[["Full Name", "Group/Class", "Sponsored by OCM"]],
+                          left_on="Child Name", right_on="Full Name", how="left")
+
+    # --- 1. Totals
+    total_present = len(att_df[att_df["Attendance Status"] == "Present"])
+    total_absent = len(att_df[att_df["Attendance Status"] == "Absent"])
+
+    # --- 2. Attendance per class
+    class_summary = att_df.groupby(["Group/Class", "Attendance Status"]).size().unstack(fill_value=0)
+
+    attendance_by_class = []
+    absences_by_class = []
+    absent_names_by_class = []
+
+    for group in sorted(att_df["Group/Class"].dropna().unique()):
+        group_df = att_df[att_df["Group/Class"] == group]
+        group_present = len(group_df[group_df["Attendance Status"] == "Present"])
+        group_absent = len(group_df[group_df["Attendance Status"] == "Absent"])
+        absent_names = group_df[group_df["Attendance Status"] == "Absent"]["Child Name"].tolist()
+
+        attendance_by_class.append(f"📘 {group}: {group_present} present")
+        absences_by_class.append(f"❌ {group}: {group_absent} absent")
+        if absent_names:
+            absent_list = ", ".join(absent_names)
+            absent_names_by_class.append(f"❌ *{group} Absent:* {absent_list}")
+
+    # --- 3. OCM summary
+    ocm_df = att_df[att_df["Sponsored by OCM"] == "Yes"]
+    ocm_present = ocm_df[ocm_df["Attendance Status"] == "Present"]["Child Name"].tolist()
+    ocm_absent = ocm_df[ocm_df["Attendance Status"] == "Absent"]["Child Name"].tolist()
+
+    # --- 4. Build WhatsApp message
+    lines = [
+        f"📊 *Sunday School Summary*",
+        f"👧👦 Total Children: {total_kids}",
+        f"✅ Present: {total_present} | ❌ Absent: {total_absent}",
+        "",
+        "📚 *Attendance by Class*",
+        *attendance_by_class,
+        "",
+        "🚫 *Absences by Class*",
+        *absences_by_class,
+        "",
+        "📛 *Absent Names by Class*",
+        *absent_names_by_class,
+        "",
+        "🌟 *OCM Sponsored Children*",
+        f"✅ Present: {', '.join(ocm_present) if ocm_present else 'None'}",
+        f"❌ Absent: {', '.join(ocm_absent) if ocm_absent else 'None'}"
+    ]
+
+    summary_msg = "\n".join(lines)
+    st.text_area("📲 WhatsApp Message Preview", summary_msg, height=400)
+
+    phone_number = st.text_input("Enter WhatsApp number (e.g. 2547XXXXXXXX)")
+    encoded_msg = summary_msg.replace("\n", "%0A").replace(" ", "%20")
+    wa_link = f"https://wa.me/{phone_number}?text={encoded_msg}"
+
+    if st.button("📤 Open WhatsApp"):
+        st.markdown(f"[Click to send via WhatsApp 🚀]({wa_link})", unsafe_allow_html=True)
+
         
         # Ensure columns for summary analysis
         if "Present" in summary.columns:
@@ -472,6 +546,7 @@ elif page == "👤 Profile":
             st.markdown(f"**Parent 1:** {child_info['Parent 1']} ({child_info['Contact 1']})")
             if pd.notna(child_info['Parent 2']):
                 st.markdown(f"**Parent 2:** {child_info['Parent 2']} ({child_info['Contact 2']})")
+            st.markdown(f"**Sponsored by OCM:** {child_info['Sponsored by OCM']}")
 
         # 📅 Attendance Overview
         if os.path.exists("attendance_records.csv"):
