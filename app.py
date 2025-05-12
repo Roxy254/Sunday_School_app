@@ -103,6 +103,11 @@ if page == "📋 Registration":
             file_name = "children_records.csv"
             if os.path.exists(file_name):
                 df = pd.read_csv(file_name)
+
+                # Ensure column exists in case old file is missing it
+                if "Sponsored by OCM" not in df.columns:
+                    df["Sponsored by OCM"] = "No"
+
                 df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
             else:
                 df = pd.DataFrame([new_entry])
@@ -121,21 +126,30 @@ if page == "📋 Registration":
             except Exception as e:
                 st.error(f"Registered locally but failed to upload to Google Sheet: {e}")
 
-
-elif page == "🗓️ Attendance":
+if page == "🗓️ Attendance":
     st.title("🗓️ Sunday Attendance")
 
-    if os.path.exists("children_records.csv"):
-        children_df = pd.read_csv("children_records.csv")
+    children_file = "children_records.csv"
+    att_file = "attendance_records.csv"
+
+    # Check if registration data exists
+    if os.path.exists(children_file):
+        children_df = pd.read_csv(children_file)
+
+        # Optional: Load attendance data early (useful for reports/merging later)
+        if os.path.exists(att_file):
+            att_df = pd.read_csv(att_file)
+        else:
+            att_df = pd.DataFrame()  # initialize empty df to avoid NameError
 
         selected_class = st.selectbox("Select Class", sorted(children_df["Group/Class"].dropna().unique()))
         class_children = children_df[children_df["Group/Class"] == selected_class]["Full Name"].tolist()
         selected_child = st.selectbox("Select Child", class_children)
 
-        # ✅ NEW: Manual date selection with label
         session_date = st.date_input("📅 Select Session Date (past or present)", value=date.today(), max_value=date.today())
-
         attendance_status = st.selectbox("Attendance Status", ["Present", "Absent"])
+
+        # Default values
         arrival_time = brought_bible = brought_pen = brought_offering = "N/A"
 
         if attendance_status == "Present":
@@ -156,11 +170,11 @@ elif page == "🗓️ Attendance":
                 "Brought Offering": brought_offering
             }
 
-            att_file = "attendance_records.csv"
+            # Reload or initialize attendance data
             if os.path.exists(att_file):
                 att_df = pd.read_csv(att_file)
 
-                # OPTIONAL: Prevent duplicate entry for same child on same date
+                # Prevent duplicate
                 duplicate = att_df[
                     (att_df["Child Name"] == selected_child) &
                     (att_df["Session Date"] == session_date.strftime("%Y-%m-%d"))
@@ -170,14 +184,15 @@ elif page == "🗓️ Attendance":
                 else:
                     att_df = pd.concat([att_df, pd.DataFrame([attendance_entry])], ignore_index=True)
                     att_df.to_csv(att_file, index=False)
-                    st.success(f"✅ Attendance for {selected_child} on {session_date.strftime('%Y-%m-%d')} recorded successfully!")
+                    st.success(f"✅ Attendance for {selected_child} recorded successfully!")
             else:
                 att_df = pd.DataFrame([attendance_entry])
                 att_df.to_csv(att_file, index=False)
-                st.success(f"✅ Attendance for {selected_child} on {session_date.strftime('%Y-%m-%d')} recorded successfully!")
+                st.success(f"✅ Attendance for {selected_child} recorded successfully!")
 
     else:
         st.warning("No registered children found. Please register children first.")
+
 
 
 elif page == "📊 Reports":
