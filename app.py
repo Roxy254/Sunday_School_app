@@ -46,7 +46,8 @@ page = st.sidebar.selectbox("Choose a page", [
 
 
 
-elif page == "📋 Registration":
+
+if page == "📋 Registration":
     st.title("📋 Sunday School - Child Registration")
 
     with st.form("child_form"):
