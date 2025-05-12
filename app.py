@@ -2,12 +2,40 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime, date
+import gspread
+from google.oauth2.service_account import Credentials
 
+
+# ✅ Must be the first Streamlit command
 st.set_page_config(
     page_title="Sunday School App",
-    page_icon="Icon.icon",  # Replace with your actual icon filename
+    page_icon="icon_2_4ze_icon.icon",  # Replace with emoji or valid icon file if needed
     layout="wide"
 )
+
+# Google Sheets setup
+def get_gsheet_client():
+    creds = Credentials.from_service_account_info(
+        st.secrets["google_service_account"],
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    return gspread.authorize(creds)
+
+
+# --- SIMPLE LOGIN SYSTEM ---
+def check_login():
+    st.markdown("### 🔐 Login to Access App")
+    password = st.text_input("Enter password", type="password")
+    if password == "Sundayschool2025":  # 🔒 Change this to your real password
+        return True
+    elif password:
+        st.error("Incorrect password. Try again.")
+        return False
+    else:
+        return False
+
+if not check_login():
+    st.stop()
 
 
 
@@ -23,7 +51,7 @@ if page == "📋 Registration":
         gender = st.selectbox("Gender", ["Male", "Female"])
         dob = st.date_input("Date of Birth", min_value=date(2000, 1, 1), max_value=date.today())
         group = st.selectbox("Group/Class", [
-            "Chosen Generation(grade PP1–PP2)",
+                "Chosen Generation(grade PP1–PP2)",
             "Chosen Nation(grade 1–3)",
             "Priesthood (grade 4–6)",
             "Preisthood 2(grade 7–12)",
@@ -44,7 +72,10 @@ if page == "📋 Registration":
 
         submitted = st.form_submit_button("Register Child")
 
-        if submitted:
+    if submitted:
+        if not full_name or not contact1 or not parent1:
+            st.warning("Please fill in at least the full name, parent name, and contact.")
+        else:
             age = (date.today() - dob).days // 365
             new_entry = {
                 "Full Name": full_name,
@@ -68,7 +99,19 @@ if page == "📋 Registration":
             else:
                 df = pd.DataFrame([new_entry])
             df.to_csv(file_name, index=False)
-            st.success(f"{full_name} (Age {age}) registered and saved successfully!")
+
+            # ✅ Upload to Google Sheets
+            try:
+                gc = get_gsheet_client()
+                sheet = gc.open("Sunday School registrations").sheet1
+                sheet.append_row([
+                    full_name, gender, dob.strftime("%Y-%m-%d"), age, group, school, grade,
+                    residence, parent1, contact1, parent2, contact2
+                ])
+                st.success(f"{full_name} (Age {age}) registered and saved successfully! (Also uploaded to Google Sheets)")
+            except Exception as e:
+                st.error(f"Registered locally but failed to upload to Google Sheet: {e}")
+
 
 elif page == "🗓️ Attendance":
     st.title("🗓️ Sunday Attendance")
@@ -79,6 +122,9 @@ elif page == "🗓️ Attendance":
         selected_class = st.selectbox("Select Class", sorted(children_df["Group/Class"].dropna().unique()))
         class_children = children_df[children_df["Group/Class"] == selected_class]["Full Name"].tolist()
         selected_child = st.selectbox("Select Child", class_children)
+
+        # Allow selecting any date up to today
+        session_date = st.date_input("Select Session Date", value=date.today(), max_value=date.today())
 
         attendance_status = st.selectbox("Attendance Status", ["Present", "Absent"])
         arrival_time = brought_bible = brought_pen = brought_offering = "N/A"
@@ -93,7 +139,7 @@ elif page == "🗓️ Attendance":
             attendance_entry = {
                 "Child Name": selected_child,
                 "Class": selected_class,
-                "Session Date": date.today().strftime("%Y-%m-%d"),
+                "Session Date": session_date.strftime("%Y-%m-%d"),
                 "Attendance Status": attendance_status,
                 "Arrival Time": arrival_time,
                 "Brought Bible": brought_bible,
@@ -108,9 +154,11 @@ elif page == "🗓️ Attendance":
             else:
                 att_df = pd.DataFrame([attendance_entry])
             att_df.to_csv(att_file, index=False)
-            st.success(f"Attendance for {selected_child} recorded successfully!")
+
+            st.success(f"Attendance for {selected_child} on {session_date.strftime('%Y-%m-%d')} recorded successfully!")
     else:
         st.warning("No registered children found. Please register children first.")
+
 
 elif page == "📊 Reports":
     st.title("📊 Attendance Reports")
