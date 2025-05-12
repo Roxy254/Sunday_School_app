@@ -123,8 +123,8 @@ elif page == "🗓️ Attendance":
         class_children = children_df[children_df["Group/Class"] == selected_class]["Full Name"].tolist()
         selected_child = st.selectbox("Select Child", class_children)
 
-        # Allow selecting any date up to today
-        session_date = st.date_input("Select Session Date", value=date.today(), max_value=date.today())
+        # ✅ NEW: Manual date selection with label
+        session_date = st.date_input("📅 Select Session Date (past or present)", value=date.today(), max_value=date.today())
 
         attendance_status = st.selectbox("Attendance Status", ["Present", "Absent"])
         arrival_time = brought_bible = brought_pen = brought_offering = "N/A"
@@ -150,12 +150,23 @@ elif page == "🗓️ Attendance":
             att_file = "attendance_records.csv"
             if os.path.exists(att_file):
                 att_df = pd.read_csv(att_file)
-                att_df = pd.concat([att_df, pd.DataFrame([attendance_entry])], ignore_index=True)
+
+                # OPTIONAL: Prevent duplicate entry for same child on same date
+                duplicate = att_df[
+                    (att_df["Child Name"] == selected_child) &
+                    (att_df["Session Date"] == session_date.strftime("%Y-%m-%d"))
+                ]
+                if not duplicate.empty:
+                    st.warning(f"⚠️ Attendance for {selected_child} on {session_date.strftime('%Y-%m-%d')} already exists.")
+                else:
+                    att_df = pd.concat([att_df, pd.DataFrame([attendance_entry])], ignore_index=True)
+                    att_df.to_csv(att_file, index=False)
+                    st.success(f"✅ Attendance for {selected_child} on {session_date.strftime('%Y-%m-%d')} recorded successfully!")
             else:
                 att_df = pd.DataFrame([attendance_entry])
-            att_df.to_csv(att_file, index=False)
+                att_df.to_csv(att_file, index=False)
+                st.success(f"✅ Attendance for {selected_child} on {session_date.strftime('%Y-%m-%d')} recorded successfully!")
 
-            st.success(f"Attendance for {selected_child} on {session_date.strftime('%Y-%m-%d')} recorded successfully!")
     else:
         st.warning("No registered children found. Please register children first.")
 
@@ -171,6 +182,20 @@ elif page == "📊 Reports":
         # Ensure date column is datetime
         att_df["Session Date"] = pd.to_datetime(att_df["Session Date"])
         att_df["Month"] = att_df["Session Date"].dt.to_period("M").astype(str)
+        # ✅ Optional date range filter
+        st.subheader("📆 Filter Attendance by Date Range")
+
+        min_date = att_df["Session Date"].min().date()
+        max_date = att_df["Session Date"].max().date()
+        start_date = st.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date)
+        end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date)
+
+        # Apply the date filter
+        att_df = att_df[
+            (att_df["Session Date"] >= pd.to_datetime(start_date)) &
+            (att_df["Session Date"] <= pd.to_datetime(end_date))
+        ]
+
 
         # Monthly summary
         monthly_summary = att_df.groupby(["Month", "Attendance Status"]).size().unstack(fill_value=0)
