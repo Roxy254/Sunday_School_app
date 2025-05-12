@@ -199,34 +199,30 @@ elif page == "📊 Reports":
     st.title("📊 Attendance Reports")
 
     att_file = "attendance_records.csv"
-
     if os.path.exists(att_file):
         att_df = pd.read_csv(att_file)
-
-        # Ensure date column is datetime
         att_df["Session Date"] = pd.to_datetime(att_df["Session Date"])
         att_df["Month"] = att_df["Session Date"].dt.to_period("M").astype(str)
-        # ✅ Optional date range filter
-        st.subheader("📆 Filter Attendance by Date Range")
 
+        # Date filter
+        st.subheader("📆 Filter Attendance by Date Range")
         min_date = att_df["Session Date"].min().date()
         max_date = att_df["Session Date"].max().date()
         start_date = st.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date)
         end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date)
 
-        # Apply the date filter
         att_df = att_df[
             (att_df["Session Date"] >= pd.to_datetime(start_date)) &
             (att_df["Session Date"] <= pd.to_datetime(end_date))
         ]
-
 
         # Monthly summary
         monthly_summary = att_df.groupby(["Month", "Attendance Status"]).size().unstack(fill_value=0)
         st.subheader("📅 Monthly Attendance Trend")
         st.line_chart(monthly_summary)
 
-        st.subheader("📥 Download Data")
+        # Download filtered data
+        st.subheader("📅 Download Data")
         csv_data = att_df.to_csv(index=False).encode("utf-8")
         st.download_button(
             label="Download CSV",
@@ -239,41 +235,29 @@ elif page == "📊 Reports":
         if "Class" in att_df.columns:
             classes = sorted(att_df["Class"].dropna().unique())
             selected_class = st.selectbox("Filter by Class", ["All"] + list(classes))
-
             if selected_class != "All":
                 att_df = att_df[att_df["Class"] == selected_class]
 
         # Attendance summary
         summary = att_df.groupby(["Child Name", "Attendance Status"]).size().unstack(fill_value=0)
-
-        # Ensure all needed columns exist, handle missing columns if necessary
         summary["Total Sessions"] = summary.sum(axis=1)
-
-        # Compute % Present but handle cases where there are no "Present" values
         summary["% Present"] = round((summary.get("Present", 0) / summary["Total Sessions"]) * 100, 1)
-
-        # Display the summary data, checking if necessary columns exist
-        columns_to_display = ["Present", "Absent", "Total Sessions", "% Present"]
-        missing_columns = [col for col in columns_to_display if col not in summary.columns]
-
-        # If "Absent" column is missing, add it manually
         if "Absent" not in summary.columns:
-            summary["Absent"] = summary.get("Absent", 0)  # Ensure there's a column for absent count
+            summary["Absent"] = 0
 
-        # Show the attendance summary in a table sorted by the "% Present" column
         st.subheader("🧾 Attendance Summary (Counts)")
+        columns_to_display = ["Present", "Absent", "Total Sessions", "% Present"]
         st.dataframe(summary[columns_to_display].sort_values("% Present", ascending=False))
 
         st.subheader("📈 Attendance Percentage")
         st.dataframe(summary[columns_to_display].sort_values("% Present", ascending=False))
 
+        # Individual child report
         st.subheader("📌 Individual Child Report")
-
         all_children = sorted(att_df["Child Name"].unique())
         selected_child = st.selectbox("Choose a child", all_children)
 
         child_data = att_df[att_df["Child Name"] == selected_child]
-
         if not child_data.empty:
             total_sessions = len(child_data)
             present_count = len(child_data[child_data["Attendance Status"] == "Present"])
@@ -285,7 +269,6 @@ elif page == "📊 Reports":
 
             st.dataframe(child_data[["Session Date", "Attendance Status", "Arrival Time", "Brought Bible", "Brought Pen", "Brought Offering"]])
 
-            # Download button
             child_csv = child_data.to_csv(index=False).encode("utf-8")
             st.download_button(
                 label=f"Download Report for {selected_child}",
@@ -295,100 +278,98 @@ elif page == "📊 Reports":
             )
         else:
             st.info("No data available for this child.")
+
+        # WhatsApp Summary
         st.subheader("📤 WhatsApp Summary Message")
 
-if os.path.exists("children_records.csv"):
-    children_df = pd.read_csv("children_records.csv")
-    all_kids = children_df["Full Name"].tolist()
-    total_kids = len(all_kids)
+        if os.path.exists("children_records.csv"):
+            children_df = pd.read_csv("children_records.csv")
+            if "Sponsored by OCM" not in children_df.columns:
+                children_df["Sponsored by OCM"] = "No"
 
-    # Merge to get Group/Class info into attendance
-    att_df = att_df.merge(children_df[["Full Name", "Group/Class", "Sponsored by OCM"]],
-                          left_on="Child Name", right_on="Full Name", how="left")
+            all_kids = children_df["Full Name"].tolist()
+            total_kids = len(all_kids)
 
-    # --- 1. Totals
-    total_present = len(att_df[att_df["Attendance Status"] == "Present"])
-    total_absent = len(att_df[att_df["Attendance Status"] == "Absent"])
+            att_df = att_df.merge(children_df[["Full Name", "Group/Class", "Sponsored by OCM"]],
+                                  left_on="Child Name", right_on="Full Name", how="left")
 
-    # --- 2. Attendance per class
-    class_summary = att_df.groupby(["Group/Class", "Attendance Status"]).size().unstack(fill_value=0)
+            total_present = len(att_df[att_df["Attendance Status"] == "Present"])
+            total_absent = len(att_df[att_df["Attendance Status"] == "Absent"])
 
-    attendance_by_class = []
-    absences_by_class = []
-    absent_names_by_class = []
+            class_summary = att_df.groupby(["Group/Class", "Attendance Status"]).size().unstack(fill_value=0)
+            attendance_by_class = []
+            absences_by_class = []
+            absent_names_by_class = []
 
-    for group in sorted(att_df["Group/Class"].dropna().unique()):
-        group_df = att_df[att_df["Group/Class"] == group]
-        group_present = len(group_df[group_df["Attendance Status"] == "Present"])
-        group_absent = len(group_df[group_df["Attendance Status"] == "Absent"])
-        absent_names = group_df[group_df["Attendance Status"] == "Absent"]["Child Name"].tolist()
+            for group in sorted(att_df["Group/Class"].dropna().unique()):
+                group_df = att_df[att_df["Group/Class"] == group]
+                group_present = len(group_df[group_df["Attendance Status"] == "Present"])
+                group_absent = len(group_df[group_df["Attendance Status"] == "Absent"])
+                absent_names = group_df[group_df["Attendance Status"] == "Absent"]["Child Name"].tolist()
 
-        attendance_by_class.append(f"📘 {group}: {group_present} present")
-        absences_by_class.append(f"❌ {group}: {group_absent} absent")
-        if absent_names:
-            absent_list = ", ".join(absent_names)
-            absent_names_by_class.append(f"❌ *{group} Absent:* {absent_list}")
+                attendance_by_class.append(f"📘 {group}: {group_present} present")
+                absences_by_class.append(f"❌ {group}: {group_absent} absent")
+                if absent_names:
+                    absent_list = ", ".join(absent_names)
+                    absent_names_by_class.append(f"❌ *{group} Absent:* {absent_list}")
 
-    # --- 3. OCM summary
-    ocm_df = att_df[att_df["Sponsored by OCM"] == "Yes"]
-    ocm_present = ocm_df[ocm_df["Attendance Status"] == "Present"]["Child Name"].tolist()
-    ocm_absent = ocm_df[ocm_df["Attendance Status"] == "Absent"]["Child Name"].tolist()
+            ocm_df = att_df[att_df["Sponsored by OCM"] == "Yes"]
+            ocm_present = ocm_df[ocm_df["Attendance Status"] == "Present"]["Child Name"].tolist()
+            ocm_absent = ocm_df[ocm_df["Attendance Status"] == "Absent"]["Child Name"].tolist()
 
-    # --- 4. Build WhatsApp message
-    lines = [
-        f"📊 *Sunday School Summary*",
-        f"👧👦 Total Children: {total_kids}",
-        f"✅ Present: {total_present} | ❌ Absent: {total_absent}",
-        "",
-        "📚 *Attendance by Class*",
-        *attendance_by_class,
-        "",
-        "🚫 *Absences by Class*",
-        *absences_by_class,
-        "",
-        "📛 *Absent Names by Class*",
-        *absent_names_by_class,
-        "",
-        "🌟 *OCM Sponsored Children*",
-        f"✅ Present: {', '.join(ocm_present) if ocm_present else 'None'}",
-        f"❌ Absent: {', '.join(ocm_absent) if ocm_absent else 'None'}"
-    ]
+            lines = [
+                "📊 *Sunday School Summary*",
+                f"👧👦 Total Children: {total_kids}",
+                f"✅ Present: {total_present} | ❌ Absent: {total_absent}",
+                "",
+                "📚 *Attendance by Class*",
+                *attendance_by_class,
+                "",
+                "🚫 *Absences by Class*",
+                *absences_by_class,
+                "",
+                "💼 *Absent Names by Class*",
+                *absent_names_by_class,
+                "",
+                "🌟 *OCM Sponsored Children*",
+                f"✅ Present: {', '.join(ocm_present) if ocm_present else 'None'}",
+                f"❌ Absent: {', '.join(ocm_absent) if ocm_absent else 'None'}"
+            ]
 
-    summary_msg = "\n".join(lines)
-    st.text_area("📲 WhatsApp Message Preview", summary_msg, height=400)
+            summary_msg = "\n".join(lines)
+            st.text_area("📲 WhatsApp Message Preview", summary_msg, height=400)
 
-    phone_number = st.text_input("Enter WhatsApp number (e.g. 2547XXXXXXXX)")
-    encoded_msg = summary_msg.replace("\n", "%0A").replace(" ", "%20")
-    wa_link = f"https://wa.me/{phone_number}?text={encoded_msg}"
+            phone_number = st.text_input("Enter WhatsApp number (e.g. 2547XXXXXXXX)")
+            encoded_msg = summary_msg.replace("\n", "%0A").replace(" ", "%20")
+            wa_link = f"https://wa.me/{phone_number}?text={encoded_msg}"
 
-    if st.button("📤 Open WhatsApp"):
-        st.markdown(f"[Click to send via WhatsApp 🚀]({wa_link})", unsafe_allow_html=True)
+            if st.button("📤 Open WhatsApp"):
+                st.markdown(f"[Click to send via WhatsApp 🚀]({wa_link})", unsafe_allow_html=True)
 
-        
-        # Ensure columns for summary analysis
+        # Top Attendance Chart
         if "Present" in summary.columns:
             top_attendance = summary["Present"].sort_values(ascending=False)
             st.subheader("🏅 Top Attendance (Most Presents)")
             st.bar_chart(top_attendance)
 
+        # Quarterly summary
+        att_df["Quarter"] = att_df["Session Date"].dt.to_period("Q").astype(str)
+        st.subheader("📊 Quarterly Attendance Summary")
+
+        quarterly_summary = att_df.groupby(["Quarter", "Attendance Status"]).size().unstack(fill_value=0)
+        quarterly_summary["Total"] = quarterly_summary.sum(axis=1)
+        if "Present" in quarterly_summary.columns:
+            quarterly_summary["% Present"] = round((quarterly_summary["Present"] / quarterly_summary["Total"]) * 100, 1)
+
+        st.dataframe(quarterly_summary)
+
+        if "Present" in quarterly_summary.columns:
+            st.subheader("📈 Quarterly Present Count")
+            st.bar_chart(quarterly_summary["Present"])
+
     else:
         st.warning("No attendance data found.")
-    # ... [your imports and earlier code remain unchanged]
-    att_df["Session Date"] = pd.to_datetime(att_df["Session Date"])
-    att_df["Quarter"] = att_df["Session Date"].dt.to_period("Q").astype(str)
-    st.subheader("📊 Quarterly Attendance Summary")
 
-    quarterly_summary = att_df.groupby(["Quarter", "Attendance Status"]).size().unstack(fill_value=0)
-    quarterly_summary["Total"] = quarterly_summary.sum(axis=1)
-    if "Present" in quarterly_summary.columns:
-        quarterly_summary["% Present"] = round((quarterly_summary["Present"] / quarterly_summary["Total"]) * 100, 1)
-  
-    st.dataframe(quarterly_summary)
-
-    # Optional: Visual chart
-    if "Present" in quarterly_summary.columns:
-        st.subheader("📈 Quarterly Present Count")
-        st.bar_chart(quarterly_summary["Present"])
 
 elif page == "📚 Performance":
     st.title("📚 Performance Tracking (School)")
