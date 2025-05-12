@@ -1,5 +1,3 @@
-gspread
- 
 streamlit
 pandas
 gspread
