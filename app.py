@@ -126,72 +126,62 @@ if page == "📋 Registration":
             except Exception as e:
                 st.error(f"Registered locally but failed to upload to Google Sheet: {e}")
 
-if page == "🗓️ Attendance":
-    st.title("🗓️ Sunday Attendance")
+elif page == "🗓️ Attendance":
+    st.title("🗓️ Sunday Attendance Register (Class View)")
 
-    children_file = "children_records.csv"
-    att_file = "attendance_records.csv"
-
-    # Check if registration data exists
-    if os.path.exists(children_file):
-        children_df = pd.read_csv(children_file)
-
-        # Optional: Load attendance data early (useful for reports/merging later)
-        if os.path.exists(att_file):
-            att_df = pd.read_csv(att_file)
-        else:
-            att_df = pd.DataFrame()  # initialize empty df to avoid NameError
+    if os.path.exists("children_records.csv"):
+        children_df = pd.read_csv("children_records.csv")
 
         selected_class = st.selectbox("Select Class", sorted(children_df["Group/Class"].dropna().unique()))
-        class_children = children_df[children_df["Group/Class"] == selected_class]["Full Name"].tolist()
-        selected_child = st.selectbox("Select Child", class_children)
+        class_children = children_df[children_df["Group/Class"] == selected_class]
 
-        session_date = st.date_input("📅 Select Session Date (past or present)", value=date.today(), max_value=date.today())
-        attendance_status = st.selectbox("Attendance Status", ["Present", "Absent"])
+        session_date = st.date_input("Select Session Date", value=date.today(), max_value=date.today())
 
-        # Default values
-        arrival_time = brought_bible = brought_pen = brought_offering = "N/A"
+        st.markdown("### ✏️ Mark Attendance and Requirements")
 
-        if attendance_status == "Present":
-            arrival_time = st.radio("Arrival Time", ["Early", "Late"])
-            brought_bible = st.radio("Brought Bible?", ["Yes", "No"])
-            brought_pen = st.radio("Brought Notebook/Pen?", ["Yes", "No"])
-            brought_offering = st.radio("Brought Offering?", ["Yes", "No"])
+        attendance_data = []
 
-        if st.button("Submit Attendance"):
-            attendance_entry = {
-                "Child Name": selected_child,
+        for idx, row in class_children.iterrows():
+            col1, col2, col3, col4, col5 = st.columns([2, 2, 1, 1, 1])
+
+            with col1:
+                st.markdown(f"**{row['Full Name']}**")
+
+            with col2:
+                status = st.selectbox("Status", ["Present", "Absent"], key=f"status_{idx}")
+
+            with col3:
+                bible = st.selectbox("Bible", ["Yes", "No", "N/A"] if status == "Present" else ["N/A"], key=f"bible_{idx}")
+
+            with col4:
+                pen = st.selectbox("Pen", ["Yes", "No", "N/A"] if status == "Present" else ["N/A"], key=f"pen_{idx}")
+
+            with col5:
+                offering = st.selectbox("Offering", ["Yes", "No", "N/A"] if status == "Present" else ["N/A"], key=f"offering_{idx}")
+
+            attendance_data.append({
+                "Child Name": row["Full Name"],
                 "Class": selected_class,
                 "Session Date": session_date.strftime("%Y-%m-%d"),
-                "Attendance Status": attendance_status,
-                "Arrival Time": arrival_time,
-                "Brought Bible": brought_bible,
-                "Brought Pen": brought_pen,
-                "Brought Offering": brought_offering
-            }
+                "Attendance Status": status,
+                "Arrival Time": "Early" if status == "Present" else "N/A",  # default to Early
+                "Brought Bible": bible,
+                "Brought Pen": pen,
+                "Brought Offering": offering
+            })
 
-            # Reload or initialize attendance data
+        if st.button("💾 Submit Class Attendance"):
+            att_file = "attendance_records.csv"
             if os.path.exists(att_file):
                 att_df = pd.read_csv(att_file)
-
-                # Prevent duplicate
-                duplicate = att_df[
-                    (att_df["Child Name"] == selected_child) &
-                    (att_df["Session Date"] == session_date.strftime("%Y-%m-%d"))
-                ]
-                if not duplicate.empty:
-                    st.warning(f"⚠️ Attendance for {selected_child} on {session_date.strftime('%Y-%m-%d')} already exists.")
-                else:
-                    att_df = pd.concat([att_df, pd.DataFrame([attendance_entry])], ignore_index=True)
-                    att_df.to_csv(att_file, index=False)
-                    st.success(f"✅ Attendance for {selected_child} recorded successfully!")
+                att_df = pd.concat([att_df, pd.DataFrame(attendance_data)], ignore_index=True)
             else:
-                att_df = pd.DataFrame([attendance_entry])
-                att_df.to_csv(att_file, index=False)
-                st.success(f"✅ Attendance for {selected_child} recorded successfully!")
+                att_df = pd.DataFrame(attendance_data)
 
+            att_df.to_csv(att_file, index=False)
+            st.success(f"✅ Attendance for {selected_class} on {session_date.strftime('%Y-%m-%d')} saved successfully!")
     else:
-        st.warning("No registered children found. Please register children first.")
+        st.warning("⚠️ No registered children found. Please register children first.")
 
 
 
