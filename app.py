@@ -499,156 +499,101 @@ elif page == "👤 Profile":
     if os.path.exists("children_records.csv"):
         children_df = pd.read_csv("children_records.csv")
         child_names = children_df["Full Name"].dropna().unique().tolist()
-        selected_child = st.selectbox("Select a Child", child_names)
-
-match = children_df[children_df["Full Name"] == selected_child]
-
-if match.empty:
-    st.error("Child not found in records.")
-else:
-    child_info = match.iloc[0]
-    # Now safely display the profile details using child_info
-
-
-
-
-       st.subheader("📋 Personal Info")
-       cols = st.columns([1, 2])
-       with cols[0]:
-            # 📷 Profile photo
-            image_path = f"photos/{selected_child.replace(' ', '_')}.jpg"
-            if os.path.exists(image_path):
-                st.image(image_path, caption="Profile Photo", use_column_width=True)
-            else:
-                st.info("📷 No profile photo found.")
-
-       with cols[1]:
-            st.markdown(f"**Name:** {child_info['Full Name']}")
-            st.markdown(f"**Age:** {child_info['Age']}")
-            st.markdown(f"**Gender:** {child_info['Gender']}")
-            st.markdown(f"**Grade/Form:** {child_info['Grade']}")
-            st.markdown(f"**School:** {child_info['School']}")
-            st.markdown(f"**Group/Class:** {child_info['Group/Class']}")
-            st.markdown(f"**Residence:** {child_info['Residence']}")
-            st.markdown(f"**Parent 1:** {child_info['Parent 1']} ({child_info['Contact 1']})")
-            if pd.notna(child_info['Parent 2']):
-                st.markdown(f"**Parent 2:** {child_info['Parent 2']} ({child_info['Contact 2']})")
-            # ✅ Fix for missing key
-            st.markdown(f"**Sponsored by OCM:** {child_info.get('Sponsored by OCM', 'Not specified')}")
-
-        # 📅 Attendance Overview
-        if os.path.exists("attendance_records.csv"):
-            att_df = pd.read_csv("attendance_records.csv")
-            att_df = att_df[att_df["Child Name"] == selected_child]
-
-            if not att_df.empty:
-                st.subheader("📅 Attendance Overview")
-                st.dataframe(att_df[["Session Date", "Attendance Status", "Arrival Time", "Brought Bible", "Brought Pen", "Brought Offering"]])
-
-                st.subheader("📦 Church Requirements Summary")
-                req_summary = {
-                    "Brought Bible": att_df["Brought Bible"].value_counts().to_dict(),
-                    "Brought Pen": att_df["Brought Pen"].value_counts().to_dict(),
-                    "Brought Offering": att_df["Brought Offering"].value_counts().to_dict()
-                }
-                for item, stats in req_summary.items():
-                    yes_count = stats.get("Yes", 0)
-                    no_count = stats.get("No", 0)
-                    total = yes_count + no_count
-                    percent = round((yes_count / total) * 100, 1) if total > 0 else 0
-                    st.markdown(f"**{item}:** {yes_count} times ✅ ({percent}%)")
-
-                st.subheader("📈 Attendance Status Chart")
-                att_chart = att_df["Attendance Status"].value_counts()
-                st.bar_chart(att_chart)
-
-                st.subheader("📤 Export Options")
-                st.download_button(
-                    label="⬇️ Download Attendance CSV",
-                    data=att_df.to_csv(index=False).encode("utf-8"),
-                    file_name=f"{selected_child.replace(' ', '_')}_attendance.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.info("No attendance data found.")
-
-        # 📚 Performance
-        if os.path.exists("performance_records.csv"):
-            perf_df = pd.read_csv("performance_records.csv")
-            perf_df = perf_df[perf_df["Child Name"] == selected_child]
-
-            if not perf_df.empty:
-                st.subheader("📚 School Performance")
-                st.dataframe(perf_df[["Year", "Term", "Math", "English", "Kiswahili", "Science", "CRE", "Other", "Remarks"]])
-
-                st.download_button(
-                    label="⬇️ Download Performance CSV",
-                    data=perf_df.to_csv(index=False).encode("utf-8"),
-                    file_name=f"{selected_child.replace(' ', '_')}_performance.csv",
-                    mime="text/csv"
-                )
-            else:
-                st.info("No performance records found.")
-    else:
-        st.warning("⚠️ No children data found. Please register children first.")
-
-elif page == "✏️ Edit Profiles":
-    st.title("✏️ Edit Child Profile")
-
-    file_name = "children_records.csv"
-    if not os.path.exists(file_name):
-        st.warning("⚠️ No children data found.")
-    else:
-        df = pd.read_csv(file_name)
-        child_names = df["Full Name"].dropna().unique().tolist()
 
         if not child_names:
-            st.info("No registered children to edit.")
+            st.warning("⚠️ No children registered yet.")
         else:
             selected_child = st.selectbox("Select a Child", child_names)
-            child_data = df[df["Full Name"] == selected_child].iloc[0]
 
-            with st.form("edit_form"):
-                full_name = st.text_input("Full Name", value=child_data["Full Name"])
-                gender = st.selectbox("Gender", ["", "Male", "Female"], index=["", "Male", "Female"].index(child_data.get("Gender", "")))
-                dob = st.date_input("Date of Birth", value=pd.to_datetime(child_data["Date of Birth"]) if pd.notna(child_data["Date of Birth"]) else date.today())
-                school = st.text_input("School Name", value=child_data.get("School", ""))
-                grade = st.selectbox("Grade / Form", [""] + [
-                    "PP1", "PP2", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
-                    "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
-                    "Form 1", "Form 2", "Form 3", "Form 4"
-                ], index=max(0, [""] + [
-                    "PP1", "PP2", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
-                    "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
-                    "Form 1", "Form 2", "Form 3", "Form 4"
-                ].index(child_data.get("Grade", ""))))
-                group = st.selectbox("Group/Class", df["Group/Class"].dropna().unique().tolist(), index=df["Group/Class"].dropna().unique().tolist().index(child_data["Group/Class"]))
-                residence = st.text_input("Residence", value=child_data.get("Residence", ""))
-                parent1 = st.text_input("Parent/Guardian 1", value=child_data.get("Parent 1", ""))
-                contact1 = st.text_input("Contact 1", value=child_data.get("Contact 1", ""))
-                parent2 = st.text_input("Parent/Guardian 2", value=child_data.get("Parent 2", ""))
-                contact2 = st.text_input("Contact 2", value=child_data.get("Contact 2", ""))
-                sponsored = st.checkbox("Sponsored by OCM", value=child_data.get("Sponsored by OCM", "No") == "Yes")
+            match = children_df[children_df["Full Name"] == selected_child]
 
-                submitted = st.form_submit_button("💾 Save Changes")
+            if match.empty:
+                st.error("Child not found in records.")
+            else:
+                child_info = match.iloc[0]
 
-            if submitted:
-                df.loc[df["Full Name"] == selected_child, :] = {
-                    "Full Name": full_name,
-                    "Gender": gender,
-                    "Date of Birth": dob.strftime("%Y-%m-%d"),
-                    "Age": (date.today() - dob).days // 365,
-                    "Group/Class": group,
-                    "School": school,
-                    "Grade": grade,
-                    "Residence": residence,
-                    "Parent 1": parent1,
-                    "Contact 1": contact1,
-                    "Parent 2": parent2,
-                    "Contact 2": contact2,
-                    "Sponsored by OCM": "Yes" if sponsored else "No"
-                }
-                df.to_csv(file_name, index=False)
-                st.success("✅ Profile updated successfully.")
+                st.subheader("📋 Personal Info")
+                cols = st.columns([1, 2])
 
+                with cols[0]:
+                    # 📷 Profile photo
+                    image_path = f"photos/{selected_child.replace(' ', '_')}.jpg"
+                    if os.path.exists(image_path):
+                        st.image(image_path, caption="Profile Photo", use_column_width=True)
+                    else:
+                        st.info("📷 No profile photo found.")
 
+                with cols[1]:
+                    st.markdown(f"**Name:** {child_info['Full Name']}")
+                    st.markdown(f"**Age:** {child_info['Age']}")
+                    st.markdown(f"**Gender:** {child_info['Gender']}")
+                    st.markdown(f"**Grade/Form:** {child_info['Grade']}")
+                    st.markdown(f"**School:** {child_info['School']}")
+                    st.markdown(f"**Group/Class:** {child_info['Group/Class']}")
+                    st.markdown(f"**Residence:** {child_info['Residence']}")
+                    st.markdown(f"**Parent 1:** {child_info['Parent 1']} ({child_info['Contact 1']})")
+                    if pd.notna(child_info['Parent 2']):
+                        st.markdown(f"**Parent 2:** {child_info['Parent 2']} ({child_info['Contact 2']})")
+                    st.markdown(f"**Sponsored by OCM:** {child_info.get('Sponsored by OCM', 'Not specified')}")
+
+                # 📅 Attendance Overview
+                if os.path.exists("attendance_records.csv"):
+                    att_df = pd.read_csv("attendance_records.csv")
+                    att_df = att_df[att_df["Child Name"] == selected_child]
+
+                    if not att_df.empty:
+                        st.subheader("📅 Attendance Overview")
+                        st.dataframe(att_df[[
+                            "Session Date", "Attendance Status", "Arrival Time",
+                            "Brought Bible", "Brought Pen", "Brought Offering"
+                        ]])
+
+                        st.subheader("📦 Church Requirements Summary")
+                        req_summary = {
+                            "Brought Bible": att_df["Brought Bible"].value_counts().to_dict(),
+                            "Brought Pen": att_df["Brought Pen"].value_counts().to_dict(),
+                            "Brought Offering": att_df["Brought Offering"].value_counts().to_dict()
+                        }
+                        for item, stats in req_summary.items():
+                            yes_count = stats.get("Yes", 0)
+                            no_count = stats.get("No", 0)
+                            total = yes_count + no_count
+                            percent = round((yes_count / total) * 100, 1) if total > 0 else 0
+                            st.markdown(f"**{item}:** {yes_count} times ✅ ({percent}%)")
+
+                        st.subheader("📈 Attendance Status Chart")
+                        att_chart = att_df["Attendance Status"].value_counts()
+                        st.bar_chart(att_chart)
+
+                        st.subheader("📤 Export Options")
+                        st.download_button(
+                            label="⬇️ Download Attendance CSV",
+                            data=att_df.to_csv(index=False).encode("utf-8"),
+                            file_name=f"{selected_child.replace(' ', '_')}_attendance.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.info("No attendance data found.")
+
+                # 📚 Performance
+                if os.path.exists("performance_records.csv"):
+                    perf_df = pd.read_csv("performance_records.csv")
+                    perf_df = perf_df[perf_df["Child Name"] == selected_child]
+
+                    if not perf_df.empty:
+                        st.subheader("📚 School Performance")
+                        st.dataframe(perf_df[[
+                            "Year", "Term", "Math", "English", "Kiswahili",
+                            "Science", "CRE", "Other", "Remarks"
+                        ]])
+
+                        st.download_button(
+                            label="⬇️ Download Performance CSV",
+                            data=perf_df.to_csv(index=False).encode("utf-8"),
+                            file_name=f"{selected_child.replace(' ', '_')}_performance.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.info("No performance records found.")
+    else:
+        st.warning("⚠️ No children data found. Please register children first.")
