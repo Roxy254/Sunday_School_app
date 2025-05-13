@@ -117,17 +117,18 @@ if page == "📋 Registration":
                 st.success(f"✅ {full_name} added.")
 
             df.to_csv(file_name, index=False)
-# Save to Google Sheet (Sheet1)
-try:
-    gc = get_gsheet_client()
-    sheet = gc.open("Sunday School registrations").sheet1
-    sheet.append_row([
-        full_name, gender, dob.strftime("%Y-%m-%d"), age, group, school, grade,
-        residence, parent1, contact1, parent2, contact2, "Yes" if sponsored else "No"
-    ])
-    st.success("✅ Saved to Google Sheets successfully!")
-except Exception as e:
-    st.error(f"⚠️ Failed to update Google Sheet: {e}")
+
+            # ✅ Move this here!
+            try:
+                gc = get_gsheet_client()
+                sheet = gc.open("Sunday School registrations").sheet1
+                sheet.append_row([
+                    full_name, gender, dob.strftime("%Y-%m-%d"), age, group, school, grade,
+                    residence, parent1, contact1, parent2, contact2, "Yes" if sponsored else "No"
+                ])
+                st.success("✅ Saved to Google Sheets successfully!")
+            except Exception as e:
+                st.error(f"⚠️ Failed to update Google Sheet: {e}")
 
 
 
@@ -148,19 +149,14 @@ elif page == "🗓️ Attendance":
 
         for idx, row in class_children.iterrows():
             col1, col2, col3, col4, col5 = st.columns([2, 2, 1, 1, 1])
-
             with col1:
                 st.markdown(f"**{row['Full Name']}**")
-
             with col2:
                 status = st.selectbox("Status", ["Present", "Absent"], key=f"status_{idx}")
-
             with col3:
                 bible = st.selectbox("Bible", ["Yes", "No", "N/A"] if status == "Present" else ["N/A"], key=f"bible_{idx}")
-
             with col4:
                 pen = st.selectbox("Pen", ["Yes", "No", "N/A"] if status == "Present" else ["N/A"], key=f"pen_{idx}")
-
             with col5:
                 offering = st.selectbox("Offering", ["Yes", "No", "N/A"] if status == "Present" else ["N/A"], key=f"offering_{idx}")
 
@@ -169,7 +165,7 @@ elif page == "🗓️ Attendance":
                 "Class": selected_class,
                 "Session Date": session_date.strftime("%Y-%m-%d"),
                 "Attendance Status": status,
-                "Arrival Time": "Early" if status == "Present" else "N/A",  # default to Early
+                "Arrival Time": "Early" if status == "Present" else "N/A",
                 "Brought Bible": bible,
                 "Brought Pen": pen,
                 "Brought Offering": offering
@@ -185,19 +181,19 @@ elif page == "🗓️ Attendance":
 
             att_df.to_csv(att_file, index=False)
             st.success(f"✅ Attendance for {selected_class} on {session_date.strftime('%Y-%m-%d')} saved successfully!")
+
+            # ✅ Save attendance to Google Sheets
+            try:
+                gc = get_gsheet_client()
+                att_sheet = gc.open("Sunday School registrations").worksheet("Attendance")
+                for record in attendance_data:
+                    att_sheet.append_row(list(record.values()))
+                st.success("✅ Attendance uploaded to Google Sheets!")
+            except Exception as e:
+                st.error(f"⚠️ Failed to update Attendance sheet: {e}")
+
     else:
         st.warning("⚠️ No registered children found. Please register children first.")
-# Save attendance to Google Sheet (Attendance worksheet)
-try:
-    gc = get_gsheet_client()
-    att_sheet = gc.open("Sunday School registrations").worksheet("Attendance")
-    att_sheet.append_row([
-        selected_child, selected_class, session_date.strftime("%Y-%m-%d"),
-        attendance_status, arrival_time, brought_bible, brought_pen, brought_offering
-    ])
-    st.success("✅ Attendance uploaded to Google Sheets!")
-except Exception as e:
-    st.error(f"⚠️ Failed to update Attendance sheet: {e}")
 
 
 
