@@ -117,6 +117,18 @@ if page == "📋 Registration":
                 st.success(f"✅ {full_name} added.")
 
             df.to_csv(file_name, index=False)
+# Save to Google Sheet (Sheet1)
+try:
+    gc = get_gsheet_client()
+    sheet = gc.open("Sunday School registrations").sheet1
+    sheet.append_row([
+        full_name, gender, dob.strftime("%Y-%m-%d"), age, group, school, grade,
+        residence, parent1, contact1, parent2, contact2, "Yes" if sponsored else "No"
+    ])
+    st.success("✅ Saved to Google Sheets successfully!")
+except Exception as e:
+    st.error(f"⚠️ Failed to update Google Sheet: {e}")
+
 
 elif page == "🗓️ Attendance":
     st.title("🗓️ Sunday Attendance Register (Class View)")
@@ -174,6 +186,17 @@ elif page == "🗓️ Attendance":
             st.success(f"✅ Attendance for {selected_class} on {session_date.strftime('%Y-%m-%d')} saved successfully!")
     else:
         st.warning("⚠️ No registered children found. Please register children first.")
+# Save attendance to Google Sheet (Attendance worksheet)
+try:
+    gc = get_gsheet_client()
+    att_sheet = gc.open("Sunday School registrations").worksheet("Attendance")
+    att_sheet.append_row([
+        selected_child, selected_class, session_date.strftime("%Y-%m-%d"),
+        attendance_status, arrival_time, brought_bible, brought_pen, brought_offering
+    ])
+    st.success("✅ Attendance uploaded to Google Sheets!")
+except Exception as e:
+    st.error(f"⚠️ Failed to update Attendance sheet: {e}")
 
 
 
