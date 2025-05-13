@@ -600,3 +600,62 @@ elif page == "👤 Profile":
                         st.info("No performance records found.")
     else:
         st.warning("⚠️ No children data found. Please register children first.")
+
+elif page == "✏️ Edit Profiles":
+    st.title("✏️ Edit Child Profile")
+
+    file_name = "children_records.csv"
+    if not os.path.exists(file_name):
+        st.warning("⚠️ No children data found.")
+    else:
+        df = pd.read_csv(file_name)
+        child_names = df["Full Name"].dropna().unique().tolist()
+
+        if not child_names:
+            st.info("No registered children to edit.")
+        else:
+            selected_child = st.selectbox("Select a Child", child_names)
+            child_data = df[df["Full Name"] == selected_child].iloc[0]
+
+            with st.form("edit_form"):
+                full_name = st.text_input("Full Name", value=child_data["Full Name"])
+                gender = st.selectbox("Gender", ["", "Male", "Female"], index=["", "Male", "Female"].index(child_data.get("Gender", "")))
+                dob = st.date_input("Date of Birth", value=pd.to_datetime(child_data["Date of Birth"]) if pd.notna(child_data["Date of Birth"]) else date.today())
+                school = st.text_input("School Name", value=child_data.get("School", ""))
+                grade = st.selectbox("Grade / Form", [""] + [
+                    "PP1", "PP2", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
+                    "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
+                    "Form 1", "Form 2", "Form 3", "Form 4"
+                ], index=max(0, [""] + [
+                    "PP1", "PP2", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
+                    "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
+                    "Form 1", "Form 2", "Form 3", "Form 4"
+                ].index(child_data.get("Grade", ""))))
+                group = st.selectbox("Group/Class", df["Group/Class"].dropna().unique().tolist(), index=df["Group/Class"].dropna().unique().tolist().index(child_data["Group/Class"]))
+                residence = st.text_input("Residence", value=child_data.get("Residence", ""))
+                parent1 = st.text_input("Parent/Guardian 1", value=child_data.get("Parent 1", ""))
+                contact1 = st.text_input("Contact 1", value=child_data.get("Contact 1", ""))
+                parent2 = st.text_input("Parent/Guardian 2", value=child_data.get("Parent 2", ""))
+                contact2 = st.text_input("Contact 2", value=child_data.get("Contact 2", ""))
+                sponsored = st.checkbox("Sponsored by OCM", value=child_data.get("Sponsored by OCM", "No") == "Yes")
+
+                submitted = st.form_submit_button("💾 Save Changes")
+
+            if submitted:
+                df.loc[df["Full Name"] == selected_child, :] = {
+                    "Full Name": full_name,
+                    "Gender": gender,
+                    "Date of Birth": dob.strftime("%Y-%m-%d"),
+                    "Age": (date.today() - dob).days // 365,
+                    "Group/Class": group,
+                    "School": school,
+                    "Grade": grade,
+                    "Residence": residence,
+                    "Parent 1": parent1,
+                    "Contact 1": contact1,
+                    "Parent 2": parent2,
+                    "Contact 2": contact2,
+                    "Sponsored by OCM": "Yes" if sponsored else "No"
+                }
+                df.to_csv(file_name, index=False)
+                st.success("✅ Profile updated successfully.")
