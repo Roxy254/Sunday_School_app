@@ -512,10 +512,9 @@ else:
 
 
 
-        st.subheader("📋 Personal Info")
-        cols = st.columns([1, 2])
-
-        with cols[0]:
+       st.subheader("📋 Personal Info")
+       cols = st.columns([1, 2])
+       with cols[0]:
             # 📷 Profile photo
             image_path = f"photos/{selected_child.replace(' ', '_')}.jpg"
             if os.path.exists(image_path):
@@ -523,7 +522,7 @@ else:
             else:
                 st.info("📷 No profile photo found.")
 
-        with cols[1]:
+       with cols[1]:
             st.markdown(f"**Name:** {child_info['Full Name']}")
             st.markdown(f"**Age:** {child_info['Age']}")
             st.markdown(f"**Gender:** {child_info['Gender']}")
