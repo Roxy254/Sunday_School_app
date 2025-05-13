@@ -493,17 +493,14 @@ elif page == "📚 Performance":
 
 
 elif page == "👤 Profile":
-
     st.title("👤 Child Profile")
 
     if os.path.exists("children_records.csv"):
-    import os
-    st.write("📁 Looking for file in:", os.getcwd())
-    st.write("📄 File exists?", os.path.exists("children_records.csv"))
+        import os
+        st.write("📁 Looking for file in:", os.getcwd())
+        st.write("📄 File exists?", os.path.exists("children_records.csv"))
 
-    children_df = pd.read_csv("children_records.csv")
-
-        children_df = pd.read_csv("children_records.csv")
+        children_df = pd.read_csv("children_records.csv")  # Fixed indentation
         child_names = children_df["Full Name"].dropna().unique().tolist()
 
         if not child_names:
