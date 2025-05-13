@@ -130,6 +130,7 @@ except Exception as e:
     st.error(f"⚠️ Failed to update Google Sheet: {e}")
 
 
+
 elif page == "🗓️ Attendance":
     st.title("🗓️ Sunday Attendance Register (Class View)")
 
