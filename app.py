@@ -1,4 +1,4 @@
-import streamlit as st
+ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime, date
@@ -525,7 +525,7 @@ elif page == "👤 Profile":
         cols = st.columns([1, 2])
 
         with cols[0]:
-            # Placeholder for profile photo
+            # 📷 Profile photo
             image_path = f"photos/{selected_child.replace(' ', '_')}.jpg"
             if os.path.exists(image_path):
                 st.image(image_path, caption="Profile Photo", use_column_width=True)
@@ -543,7 +543,8 @@ elif page == "👤 Profile":
             st.markdown(f"**Parent 1:** {child_info['Parent 1']} ({child_info['Contact 1']})")
             if pd.notna(child_info['Parent 2']):
                 st.markdown(f"**Parent 2:** {child_info['Parent 2']} ({child_info['Contact 2']})")
-            st.markdown(f"**Sponsored by OCM:** {child_info['Sponsored by OCM']}")
+            # ✅ Fix for missing key
+            st.markdown(f"**Sponsored by OCM:** {child_info.get('Sponsored by OCM', 'Not specified')}")
 
         # 📅 Attendance Overview
         if os.path.exists("attendance_records.csv"):
@@ -554,7 +555,6 @@ elif page == "👤 Profile":
                 st.subheader("📅 Attendance Overview")
                 st.dataframe(att_df[["Session Date", "Attendance Status", "Arrival Time", "Brought Bible", "Brought Pen", "Brought Offering"]])
 
-                # ✅ Requirement statistics
                 st.subheader("📦 Church Requirements Summary")
                 req_summary = {
                     "Brought Bible": att_df["Brought Bible"].value_counts().to_dict(),
@@ -568,12 +568,10 @@ elif page == "👤 Profile":
                     percent = round((yes_count / total) * 100, 1) if total > 0 else 0
                     st.markdown(f"**{item}:** {yes_count} times ✅ ({percent}%)")
 
-                # 📊 Attendance chart
                 st.subheader("📈 Attendance Status Chart")
                 att_chart = att_df["Attendance Status"].value_counts()
                 st.bar_chart(att_chart)
 
-                # 📥 Export
                 st.subheader("📤 Export Options")
                 st.download_button(
                     label="⬇️ Download Attendance CSV",
@@ -603,5 +601,3 @@ elif page == "👤 Profile":
                 st.info("No performance records found.")
     else:
         st.warning("⚠️ No children data found. Please register children first.")
-
-
