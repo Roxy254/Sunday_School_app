@@ -46,25 +46,35 @@ page = st.sidebar.selectbox("Choose a page", [
 
 
 
-
 if page == "📋 Registration":
-    st.title("📋 Sunday School - Child Registration")
+    st.title("📋 Register or Update Child Record")
+
+    file_name = "children_records.csv"
+    if os.path.exists(file_name):
+        df = pd.read_csv(file_name)
+        existing_names = df["Full Name"].tolist()
+    else:
+        df = pd.DataFrame()
+        existing_names = []
+
+    st.markdown("### ✍️ New or Incomplete Registration")
 
     with st.form("child_form"):
         full_name = st.text_input("Full Name")
-        gender = st.selectbox("Gender", ["Male", "Female"])
-        dob = st.date_input("Date of Birth", min_value=date(2000, 1, 1), max_value=date.today())
         group = st.selectbox("Group/Class", [
             "Chosen Generation(grade PP1–PP2)",
             "Chosen Nation(grade 1–3)",
             "Priesthood (grade 4–6)",
             "Preisthood 2(grade 7–12)",
-            "Priesthood 2(form 1-4)"
+            "Priesthood 2(form 1–4)"
         ])
+        st.markdown("*(The rest can be filled later)*")
+
+        gender = st.selectbox("Gender", ["", "Male", "Female"])
+        dob = st.date_input("Date of Birth", value=date.today(), max_value=date.today())
         school = st.text_input("School Name")
-        grade = st.selectbox("Grade / Form", [
-            "PP1", "PP2",
-            "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
+        grade = st.selectbox("Grade / Form", [""] + [
+            "PP1", "PP2", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
             "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
             "Form 1", "Form 2", "Form 3", "Form 4"
         ])
@@ -73,21 +83,19 @@ if page == "📋 Registration":
         contact1 = st.text_input("Contact for Parent 1")
         parent2 = st.text_input("Parent/Guardian 2 Name (optional)")
         contact2 = st.text_input("Contact for Parent 2")
+        sponsored = st.checkbox("Sponsored by OCM")
 
-        # ✅ Sponsorship checkbox
-        sponsored = st.checkbox("Sponsored by OCM?")
-
-        submitted = st.form_submit_button("Register Child")
+        submitted = st.form_submit_button("💾 Save")
 
     if submitted:
-        if not full_name or not contact1 or not parent1:
-            st.warning("Please fill in at least the full name, parent name, and contact.")
+        if not full_name or not group:
+            st.error("Full Name and Class are required.")
         else:
-            age = (date.today() - dob).days // 365
-            new_entry = {
+            age = (date.today() - dob).days // 365 if dob else ""
+            new_data = {
                 "Full Name": full_name,
                 "Gender": gender,
-                "Date of Birth": dob.strftime("%Y-%m-%d"),
+                "Date of Birth": dob.strftime("%Y-%m-%d") if dob else "",
                 "Age": age,
                 "Group/Class": group,
                 "School": school,
@@ -100,31 +108,14 @@ if page == "📋 Registration":
                 "Sponsored by OCM": "Yes" if sponsored else "No"
             }
 
-            file_name = "children_records.csv"
-            if os.path.exists(file_name):
-                df = pd.read_csv(file_name)
-
-                # Ensure column exists in case old file is missing it
-                if "Sponsored by OCM" not in df.columns:
-                    df["Sponsored by OCM"] = "No"
-
-                df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
+            if full_name in existing_names:
+                df.loc[df["Full Name"] == full_name] = new_data
+                st.success(f"✅ {full_name}'s info updated.")
             else:
-                df = pd.DataFrame([new_entry])
-            df.to_csv(file_name, index=False)
+                df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+                st.success(f"✅ {full_name} added.")
 
-            # ✅ Upload to Google Sheets
-            try:
-                gc = get_gsheet_client()
-                sheet = gc.open("Sunday School registrations").sheet1
-                sheet.append_row([
-                    full_name, gender, dob.strftime("%Y-%m-%d"), age, group, school, grade,
-                    residence, parent1, contact1, parent2, contact2,
-                    "Yes" if sponsored else "No"
-                ])
-                st.success(f"{full_name} (Age {age}) registered and saved successfully! (Also uploaded to Google Sheets)")
-            except Exception as e:
-                st.error(f"Registered locally but failed to upload to Google Sheet: {e}")
+            df.to_csv(file_name, index=False)
 
 elif page == "🗓️ Attendance":
     st.title("🗓️ Sunday Attendance Register (Class View)")
