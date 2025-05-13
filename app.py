@@ -501,7 +501,16 @@ elif page == "👤 Profile":
         child_names = children_df["Full Name"].dropna().unique().tolist()
         selected_child = st.selectbox("Select a Child", child_names)
 
-        child_info = children_df[children_df["Full Name"] == selected_child].iloc[0]
+match = children_df[children_df["Full Name"] == selected_child]
+
+if match.empty:
+    st.error("Child not found in records.")
+else:
+    child_info = match.iloc[0]
+    # Now safely display the profile details using child_info
+
+
+
 
         st.subheader("📋 Personal Info")
         cols = st.columns([1, 2])
