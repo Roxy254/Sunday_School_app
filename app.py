@@ -40,8 +40,7 @@ st.set_page_config(
 # Google Sheets setup
 def get_gsheet_client():
     creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
-    creds = Credentials.from_service_account_info(
-        creds_dict,
+    credentials = service_account.Credentials.from_service_account_info(creds_dict)
         scopes=[
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
