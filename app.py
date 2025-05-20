@@ -1,10 +1,21 @@
 import streamlit as st
 import pandas as pd
 import os
+import json
 from datetime import datetime, date
 import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
+
+
+
+# Load credentials from Streamlit secrets
+creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
+credentials = service_account.Credentials.from_service_account_info(creds_dict)
+
+# Authorize gspread with the credentials
+client = gspread.authorize(credentials)
+
 
 # Ensure 'data/' directory exists
 os.makedirs("data", exist_ok=True)
