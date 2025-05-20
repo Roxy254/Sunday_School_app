@@ -4,7 +4,7 @@ import os
 import json
 from datetime import datetime, date
 import gspread
-from google.oauth2.service_account import Credentials
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 
