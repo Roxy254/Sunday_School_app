@@ -39,14 +39,16 @@ st.set_page_config(
 
 # Google Sheets setup
 def get_gsheet_client():
+    creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
     creds = Credentials.from_service_account_info(
-        st.secrets["google_service_account"],
+        creds_dict,
         scopes=[
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
     )
     return gspread.authorize(creds), creds
+
 
 def load_or_create_sheet(sheet_name: str):
     client, _ = get_gsheet_client()
