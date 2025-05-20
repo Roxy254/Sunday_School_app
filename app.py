@@ -4,9 +4,10 @@ import os
 from datetime import datetime, date
 import gspread
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+
 # Ensure 'data/' directory exists
 os.makedirs("data", exist_ok=True)
-
 
 # Set up a consistent data directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -17,7 +18,6 @@ os.makedirs(DATA_DIR, exist_ok=True)
 CHILDREN_FILE = os.path.join(DATA_DIR, "children_records.csv")
 ATTENDANCE_FILE = os.path.join(DATA_DIR, "attendance_records.csv")
 PERFORMANCE_FILE = os.path.join(DATA_DIR, "performance_records.csv")
-
 
 # ✅ Must be the first Streamlit command
 st.set_page_config(
@@ -30,9 +30,52 @@ st.set_page_config(
 def get_gsheet_client():
     creds = Credentials.from_service_account_info(
         st.secrets["google_service_account"],
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
     )
-    return gspread.authorize(creds)
+    return gspread.authorize(creds), creds
+
+def load_or_create_sheet(sheet_name: str):
+    client, _ = get_gsheet_client()
+    try:
+        sheet = client.open(sheet_name).sheet1
+    except gspread.exceptions.SpreadsheetNotFound:
+        # Create a new sheet if it doesn't exist
+        sheet = client.create(sheet_name).sheet1
+    return sheet
+
+def share_sheet(sheet_id, email_to_share):
+    _, creds = get_gsheet_client()
+    drive_service = build('drive', 'v3', credentials=creds)
+    permission = {
+        'type': 'user',
+        'role': 'writer',
+        'emailAddress': email_to_share
+    }
+    drive_service.permissions().create(fileId=sheet_id, body=permission).execute()
+
+# Streamlit UI
+st.title("📋 Sunday School Spreadsheet Manager")
+
+sheet_name = st.text_input("Enter Google Sheet name", "Sunday School App Sheet")
+
+if st.button("Load Sheet"):
+    sheet = load_or_create_sheet(sheet_name)
+    st.session_state["sheet"] = sheet
+    st.success("Sheet loaded successfully!")
+    st.write("Current Data:")
+    data = sheet.get_all_records()
+    st.dataframe(pd.DataFrame(data))
+
+if "sheet" in st.session_state and st.button("Share Sheet with Me"):
+    email = st.text_input("Enter your email address to share access:")
+    if email:
+        share_sheet(st.session_state["sheet"].spreadsheet.id, email)
+        st.success(f"Sheet shared with {email}!")
+    else:
+        st.warning("Please enter an email address before sharing.")
 
 
 # --- SIMPLE LOGIN SYSTEM ---
