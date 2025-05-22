@@ -24,4 +24,6 @@ sheet.update("A1", [["✅ Hello from updated scopes!"]])
 
 
 print("✔️ Successfully wrote to Google Sheet.")
+git filter-repo --path <C:\Users\AROMA MBAYU MUNGA\Documents\GitHub\Sunday_school_app _v2\Sunday_school_app> --invert-paths
+
 

@@ -6,6 +6,8 @@ from datetime import datetime, date
 import gspread
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from utils import safe_append_to_gsheet
+
 
 
 
@@ -25,6 +27,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
+
 # Define CSV file paths
 CHILDREN_FILE = os.path.join(DATA_DIR, "children_records.csv")
 ATTENDANCE_FILE = os.path.join(DATA_DIR, "attendance_records.csv")
@@ -36,6 +39,39 @@ st.set_page_config(
     page_icon="icon_2_4ze_icon.icon",  # Replace with emoji or valid icon file if needed
     layout="wide"
 )
+
+import gspread
+from google.auth.exceptions import GoogleAuthError
+
+def get_gsheet_client():
+    try:
+        gc = gspread.service_account(filename="service_account.json")
+        return gc
+    except FileNotFoundError:
+        raise RuntimeError("❌ service_account.json not found.")
+    except GoogleAuthError as e:
+        raise RuntimeError(f"❌ Google Auth error: {e}")
+    except Exception as e:
+        raise RuntimeError(f"❌ Could not create gspread client: {e}")
+
+def safe_append_to_gsheet(sheet_name, row_data):
+    try:
+        gc = get_gsheet_client()
+        sh = gc.open("Sunday School registrations")
+
+        if sheet_name.lower() == "attendance":
+            worksheet = sh.worksheet("Attendance")
+        else:
+            worksheet = sh.sheet1  # default to main sheet
+
+        worksheet.append_row(row_data)
+        return "✅ Successfully saved to Google Sheets."
+    
+    except Exception as e:
+        print(f"⚠️ Google Sheets sync failed: {e}")
+        return f"⚠️ Failed to upload to Google Sheets: {e}"
+
+
 
 # Google Sheets setup
 def get_gsheet_client():
@@ -191,16 +227,14 @@ if page == "📋 Registration":
             df.to_csv(file_name, index=False)
 
             # ✅ Upload to Google Sheets
-            try:
-                gc = get_gsheet_client()
-                sheet = gc.open("Sunday School registrations").sheet1
-                sheet.append_row([
-                    full_name, gender, dob.strftime("%Y-%m-%d"), age, group, school, grade,
-                    residence, parent1, contact1, parent2, contact2, "Yes" if sponsored else "No"
-                ])
-                st.success("✅ Saved to Google Sheets successfully!")
-            except Exception as e:
-                st.error(f"⚠️ Failed to update Google Sheet: {e}")
+           from utils import safe_append_to_gsheet
+
+result_msg = safe_append_to_gsheet("Registration", [
+    full_name, gender, dob.strftime("%Y-%m-%d"), age, group, school, grade,
+    residence, parent1, contact1, parent2, contact2, "Yes" if sponsored else "No"
+])
+st.info(result_msg)
+
 
 
 elif page == "🗓️ Attendance":
@@ -263,14 +297,11 @@ elif page == "🗓️ Attendance":
                 st.success(f"✅ Attendance for {selected_class} on {session_date.strftime('%Y-%m-%d')} saved successfully!")
 
                 # ✅ Upload attendance to Google Sheets
-                try:
-                    gc = get_gsheet_client()
-                    att_sheet = gc.open("Sunday School registrations").worksheet("Attendance")
-                    for record in attendance_data:
-                        att_sheet.append_row(list(record.values()))
-                    st.success("✅ Attendance uploaded to Google Sheets!")
-                except Exception as e:
-                    st.error(f"⚠️ Failed to update Attendance sheet: {e}")
+                # ✅ Upload attendance to Google Sheets using safe helper
+for record in attendance_data:
+    msg = safe_append_to_gsheet("Attendance", list(record.values()))
+    st.info(msg)
+
         else:
             st.warning("⚠️ No registered children found in file.")
     else:
@@ -591,3 +622,12 @@ elif page == "✏️ Edit Profiles":
                 }
                 df.to_csv(file_name, index=False)
                 st.success("✅ Profile updated successfully!")
+messages = []
+for record in attendance_data:
+    result = safe_append_to_gsheet("Attendance", list(record.values()))
+    messages.append(f"{record['Child Name']}: {result}")
+
+st.markdown("### 📝 Sync Results")
+for m in messages:
+    st.info(m)
+
