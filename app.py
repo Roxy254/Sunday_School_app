@@ -6,6 +6,8 @@ from pymongo import MongoClient
 from bson import ObjectId
 import json
 import shutil
+import socket
+import requests
 
 # ✅ Must be the first Streamlit command
 st.set_page_config(
@@ -76,21 +78,77 @@ if 'last_cache_update' not in st.session_state:
 if 'attendance_cache' not in st.session_state:
     st.session_state.attendance_cache = None
 
+def get_public_ip():
+    """Get the public IP address of the current device"""
+    try:
+        response = requests.get('https://api.ipify.org')
+        return response.text
+    except:
+        return None
+
 # MongoDB Atlas connection
 @st.cache_resource(show_spinner=False)
 def get_database():
     try:
         if "MONGODB_URI" not in st.secrets:
-            st.error("MONGODB_URI not found in secrets. Please check your .streamlit/secrets.toml file.")
+            st.error("""MONGODB_URI not found in secrets. 
+                    Please ensure you have set up the .streamlit/secrets.toml file on this device.""")
+            st.info("""To connect a new device:
+                    1. Create .streamlit/secrets.toml in your app directory
+                    2. Add your MongoDB URI: MONGODB_URI = "your_connection_string"
+                    3. Whitelist your IP address in MongoDB Atlas
+                    """)
             return None
             
         mongo_uri = st.secrets["MONGODB_URI"]
-        client = MongoClient(mongo_uri)
-        # Test the connection
-        client.admin.command('ping')
-        return client.sunday_school_db
+        
+        # Get device information for troubleshooting
+        device_name = socket.gethostname()
+        public_ip = get_public_ip()
+        
+        try:
+            client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+            # Test the connection
+            client.admin.command('ping')
+            st.success(f"✅ Connected successfully from device: {device_name}")
+            
+            # Store connection info in session state
+            if 'connection_info' not in st.session_state:
+                st.session_state.connection_info = {
+                    'device_name': device_name,
+                    'public_ip': public_ip,
+                    'last_connected': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+            
+            return client.sunday_school_db
+            
+        except Exception as e:
+            error_message = str(e)
+            st.error("❌ Connection failed!")
+            st.error(f"Error details: {error_message}")
+            
+            # Provide troubleshooting information
+            st.warning("Troubleshooting Information:")
+            st.info(f"""
+                Device Name: {device_name}
+                Public IP: {public_ip}
+                
+                Common solutions:
+                1. Check if your IP ({public_ip}) is whitelisted in MongoDB Atlas
+                2. Verify your internet connection
+                3. Ensure your MongoDB Atlas cluster is running
+                4. Verify your connection string in secrets.toml
+                
+                To whitelist your IP:
+                1. Log in to MongoDB Atlas
+                2. Go to Network Access
+                3. Click '+ ADD IP ADDRESS'
+                4. Add your IP: {public_ip}
+                """)
+            return None
+            
     except Exception as e:
-        st.error(f"Failed to connect to database: {str(e)}")
+        st.error(f"Configuration error: {str(e)}")
         return None
 
 @st.cache_data(ttl=300)
@@ -152,7 +210,7 @@ if not check_login():
 # Sidebar navigation with added Backup option
 page = st.sidebar.selectbox("Choose a page", [
     "📋 Registration", "🗓️ Attendance", "📊 Reports", "📚 Performance", 
-    "👤 Profile", "✏️ Edit Profiles", "💾 Backup Data"
+    "👤 Profile", "✏️ Edit Profiles", "💾 Backup Data", "⚙️ Connection Settings"
 ])
 
 # Get cached children data
@@ -764,4 +822,70 @@ elif page == "✏️ Edit Profiles":
             st.error(f"Error accessing database: {str(e)}")
     else:
         st.error("❌ Database connection failed")
+
+elif page == "⚙️ Connection Settings":
+    st.title("⚙️ Database Connection Settings")
+    
+    if 'connection_info' in st.session_state:
+        info = st.session_state.connection_info
+        st.markdown("### Current Connection")
+        st.write(f"**Device Name:** {info['device_name']}")
+        st.write(f"**Public IP:** {info['public_ip']}")
+        st.write(f"**Last Connected:** {info['last_connected']}")
+        
+        if st.button("Test Connection"):
+            db = get_database()
+            if db is not None:
+                st.success("Connection test successful!")
+                # Test collections access
+                try:
+                    children_count = len(list(db.children.find()))
+                    attendance_count = len(list(db.attendance.find()))
+                    st.info(f"""Database Statistics:
+                        - Children Records: {children_count}
+                        - Attendance Records: {attendance_count}
+                        """)
+                except Exception as e:
+                    st.error(f"Error accessing collections: {str(e)}")
+    
+    st.markdown("---")
+    st.markdown("### 📝 Connection Instructions")
+    st.markdown("""
+    To connect a new device to the database:
+    
+    1. **Create secrets.toml file:**
+       - Create a `.streamlit` folder in your app directory
+       - Create a `secrets.toml` file inside `.streamlit`
+       - Add your MongoDB URI:
+         ```toml
+         MONGODB_URI = "mongodb+srv://username:password@cluster.mongodb.net/sunday_school_db"
+         ```
+    
+    2. **Whitelist IP Address:**
+       - Log in to MongoDB Atlas
+       - Go to Network Access
+       - Click '+ ADD IP ADDRESS'
+       - Add the device's IP address or use '0.0.0.0/0' for all IPs (less secure)
+    
+    3. **Test Connection:**
+       - Run the app on the new device
+       - Use the 'Test Connection' button above
+       - Check for any error messages
+    
+    4. **Security Notes:**
+       - Keep your secrets.toml file private
+       - Never commit it to version control
+       - Use specific IP addresses rather than '0.0.0.0/0' when possible
+       - Regularly review connected IPs in MongoDB Atlas
+    """)
+    
+    st.markdown("---")
+    st.markdown("### 🔒 Security Recommendations")
+    st.markdown("""
+    - Regularly update your MongoDB Atlas password
+    - Remove unused IP whitelist entries
+    - Monitor database access logs in MongoDB Atlas
+    - Keep your connection string private
+    - Use separate database users for different purposes
+    """)
 
