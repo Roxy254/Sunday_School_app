@@ -4,6 +4,8 @@ import os
 from datetime import datetime, date
 from pymongo import MongoClient
 from bson import ObjectId
+import json
+import shutil
 
 # ✅ Must be the first Streamlit command
 st.set_page_config(
@@ -12,6 +14,58 @@ st.set_page_config(
     layout="wide"
 )
 
+# Create backup directories if they don't exist
+BACKUP_DIR = "backups"
+CURRENT_BACKUP_DIR = os.path.join(BACKUP_DIR, "current")
+HISTORY_BACKUP_DIR = os.path.join(BACKUP_DIR, "history")
+
+for directory in [BACKUP_DIR, CURRENT_BACKUP_DIR, HISTORY_BACKUP_DIR]:
+    os.makedirs(directory, exist_ok=True)
+
+def backup_database(db):
+    """
+    Backup all collections to CSV and JSON files
+    """
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Create a new directory for this backup in history
+        backup_path = os.path.join(HISTORY_BACKUP_DIR, timestamp)
+        os.makedirs(backup_path, exist_ok=True)
+        
+        collections = ['children', 'attendance']
+        backup_files = []
+        
+        for collection_name in collections:
+            collection = db[collection_name]
+            data = list(collection.find())
+            
+            # Convert ObjectId to string for JSON serialization
+            for item in data:
+                item['_id'] = str(item['_id'])
+            
+            # Save as CSV
+            df = pd.DataFrame(data)
+            csv_file = os.path.join(backup_path, f"{collection_name}.csv")
+            df.to_csv(csv_file, index=False)
+            
+            # Save as JSON
+            json_file = os.path.join(backup_path, f"{collection_name}.json")
+            with open(json_file, 'w') as f:
+                json.dump(data, f, indent=2)
+            
+            # Update current backup
+            current_csv = os.path.join(CURRENT_BACKUP_DIR, f"{collection_name}.csv")
+            current_json = os.path.join(CURRENT_BACKUP_DIR, f"{collection_name}.json")
+            shutil.copy2(csv_file, current_csv)
+            shutil.copy2(json_file, current_json)
+            
+            backup_files.extend([csv_file, json_file])
+        
+        return True, backup_files
+    except Exception as e:
+        return False, str(e)
+
 # Initialize session state for caching
 if 'db' not in st.session_state:
     st.session_state.db = None
@@ -19,9 +73,11 @@ if 'children_cache' not in st.session_state:
     st.session_state.children_cache = None
 if 'last_cache_update' not in st.session_state:
     st.session_state.last_cache_update = None
+if 'attendance_cache' not in st.session_state:
+    st.session_state.attendance_cache = None
 
 # MongoDB Atlas connection
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def get_database():
     try:
         if "MONGODB_URI" not in st.secrets:
@@ -37,25 +93,39 @@ def get_database():
         st.error(f"Failed to connect to database: {str(e)}")
         return None
 
-# Cache children data for 5 minutes
 @st.cache_data(ttl=300)
-def get_children_data(db):
-    if db is not None:
+def get_children_data(_db):
+    """
+    Cache children data with TTL of 5 minutes
+    Using _db to tell Streamlit not to hash this parameter
+    """
+    if _db is not None:
         try:
-            return list(db.children.find())
+            children = list(_db.children.find())
+            # Convert ObjectId to string for better handling
+            for child in children:
+                child['_id'] = str(child['_id'])
+            return children
         except Exception as e:
             st.error(f"Error fetching children: {str(e)}")
             return []
     return []
 
-# Cache attendance data for 5 minutes
 @st.cache_data(ttl=300)
-def get_attendance_data(db, query=None):
-    if db is not None:
+def get_attendance_data(_db, date_filter=None):
+    """
+    Cache attendance data with TTL of 5 minutes
+    Using _db to tell Streamlit not to hash this parameter
+    """
+    if _db is not None:
         try:
-            if query:
-                return list(db.attendance.find(query))
-            return list(db.attendance.find())
+            query = {"date": date_filter} if date_filter else {}
+            attendance = list(_db.attendance.find(query))
+            # Convert ObjectId to string for better handling
+            for record in attendance:
+                record['_id'] = str(record['_id'])
+                record['child_id'] = str(record['child_id'])
+            return attendance
         except Exception as e:
             st.error(f"Error fetching attendance: {str(e)}")
             return []
@@ -79,13 +149,91 @@ def check_login():
 if not check_login():
     st.stop()
 
-# Sidebar navigation
+# Sidebar navigation with added Backup option
 page = st.sidebar.selectbox("Choose a page", [
-    "📋 Registration", "🗓️ Attendance", "📊 Reports", "📚 Performance", "👤 Profile", "✏️ Edit Profiles"
+    "📋 Registration", "🗓️ Attendance", "📊 Reports", "📚 Performance", 
+    "👤 Profile", "✏️ Edit Profiles", "💾 Backup Data"
 ])
 
 # Get cached children data
 children = get_children_data(db)
+
+if page == "💾 Backup Data":
+    st.title("💾 Database Backup")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("### Current Backup Status")
+        
+        # Check current backup files
+        current_files = os.listdir(CURRENT_BACKUP_DIR) if os.path.exists(CURRENT_BACKUP_DIR) else []
+        if current_files:
+            latest_backup = max([os.path.getmtime(os.path.join(CURRENT_BACKUP_DIR, f)) for f in current_files])
+            latest_backup_time = datetime.fromtimestamp(latest_backup)
+            st.info(f"Last backup: {latest_backup_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        else:
+            st.warning("No current backup found")
+        
+        if st.button("Create New Backup"):
+            with st.spinner("Creating backup..."):
+                success, result = backup_database(db)
+                if success:
+                    st.success("✅ Backup created successfully!")
+                    st.write("Backup files created:")
+                    for file in result:
+                        st.write(f"- {os.path.basename(file)}")
+                else:
+                    st.error(f"❌ Backup failed: {result}")
+    
+    with col2:
+        st.markdown("### Backup History")
+        history_folders = sorted([d for d in os.listdir(HISTORY_BACKUP_DIR) 
+                                if os.path.isdir(os.path.join(HISTORY_BACKUP_DIR, d))],
+                               reverse=True)
+        
+        if history_folders:
+            for folder in history_folders[:10]:  # Show last 10 backups
+                timestamp = datetime.strptime(folder, "%Y%m%d_%H%M%S")
+                st.write(f"📁 {timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+        else:
+            st.info("No backup history found")
+    
+    st.markdown("---")
+    st.markdown("### Download Backups")
+    
+    # Allow downloading current backup files
+    st.markdown("#### Current Backup Files")
+    current_files = os.listdir(CURRENT_BACKUP_DIR) if os.path.exists(CURRENT_BACKUP_DIR) else []
+    
+    if current_files:
+        for file in current_files:
+            file_path = os.path.join(CURRENT_BACKUP_DIR, file)
+            with open(file_path, 'rb') as f:
+                st.download_button(
+                    label=f"Download {file}",
+                    data=f,
+                    file_name=file,
+                    mime='application/octet-stream'
+                )
+    else:
+        st.info("No backup files available for download")
+    
+    # Maintenance options
+    st.markdown("---")
+    st.markdown("### Backup Maintenance")
+    if st.button("Clean Old Backups (Keep Last 10)"):
+        try:
+            history_folders = sorted([d for d in os.listdir(HISTORY_BACKUP_DIR) 
+                                    if os.path.isdir(os.path.join(HISTORY_BACKUP_DIR, d))])
+            if len(history_folders) > 10:
+                for folder in history_folders[:-10]:
+                    shutil.rmtree(os.path.join(HISTORY_BACKUP_DIR, folder))
+                st.success("Old backups cleaned successfully!")
+            else:
+                st.info("No old backups to clean")
+        except Exception as e:
+            st.error(f"Error cleaning old backups: {str(e)}")
 
 if page == "📋 Registration":
     st.title("📋 Register or Update Child Record")
@@ -168,8 +316,8 @@ elif page == "🗓️ Attendance":
             session_date = st.date_input("Session Date", date.today())
             
             # Get cached attendance data for the selected date
-            attendance_records = get_attendance_data(db, {"date": session_date.isoformat()})
-            attendance_dict = {str(record["child_id"]): record for record in attendance_records}
+            attendance_records = get_attendance_data(db, session_date.isoformat())
+            attendance_dict = {str(record['child_id']): record for record in attendance_records}
             
             with st.form("attendance_form"):
                 st.write("Mark attendance for each child:")
