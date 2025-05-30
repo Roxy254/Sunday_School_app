@@ -1,137 +1,74 @@
 import streamlit as st
 import pandas as pd
 import os
-import json
 from datetime import datetime, date
-import gspread
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from utils import safe_append_to_gsheet
-
-
-
-
-# Load credentials from Streamlit secrets
-creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
-credentials = service_account.Credentials.from_service_account_info(creds_dict)
-
-# Authorize gspread with the credentials
-client = gspread.authorize(credentials)
-
-
-# Ensure 'data/' directory exists
-os.makedirs("data", exist_ok=True)
-
-# Set up a consistent data directory
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-os.makedirs(DATA_DIR, exist_ok=True)
-
-
-# Define CSV file paths
-CHILDREN_FILE = os.path.join(DATA_DIR, "children_records.csv")
-ATTENDANCE_FILE = os.path.join(DATA_DIR, "attendance_records.csv")
-PERFORMANCE_FILE = os.path.join(DATA_DIR, "performance_records.csv")
+from pymongo import MongoClient
+from bson import ObjectId
 
 # ✅ Must be the first Streamlit command
 st.set_page_config(
     page_title="Sunday School App",
-    page_icon="icon_2_4ze_icon.icon",  # Replace with emoji or valid icon file if needed
+    page_icon="icon_2_4ze_icon.icon",
     layout="wide"
 )
 
-import gspread
-from google.auth.exceptions import GoogleAuthError
+# Initialize session state for caching
+if 'db' not in st.session_state:
+    st.session_state.db = None
+if 'children_cache' not in st.session_state:
+    st.session_state.children_cache = None
+if 'last_cache_update' not in st.session_state:
+    st.session_state.last_cache_update = None
 
-def get_gsheet_client():
+# MongoDB Atlas connection
+@st.cache_resource
+def get_database():
     try:
-        gc = gspread.service_account(filename="service_account.json")
-        return gc
-    except FileNotFoundError:
-        raise RuntimeError("❌ service_account.json not found.")
-    except GoogleAuthError as e:
-        raise RuntimeError(f"❌ Google Auth error: {e}")
+        if "MONGODB_URI" not in st.secrets:
+            st.error("MONGODB_URI not found in secrets. Please check your .streamlit/secrets.toml file.")
+            return None
+            
+        mongo_uri = st.secrets["MONGODB_URI"]
+        client = MongoClient(mongo_uri)
+        # Test the connection
+        client.admin.command('ping')
+        return client.sunday_school_db
     except Exception as e:
-        raise RuntimeError(f"❌ Could not create gspread client: {e}")
+        st.error(f"Failed to connect to database: {str(e)}")
+        return None
 
-def safe_append_to_gsheet(sheet_name, row_data):
-    try:
-        gc = get_gsheet_client()
-        sh = gc.open("Sunday School registrations")
+# Cache children data for 5 minutes
+@st.cache_data(ttl=300)
+def get_children_data(db):
+    if db is not None:
+        try:
+            return list(db.children.find())
+        except Exception as e:
+            st.error(f"Error fetching children: {str(e)}")
+            return []
+    return []
 
-        if sheet_name.lower() == "attendance":
-            worksheet = sh.worksheet("Attendance")
-        else:
-            worksheet = sh.sheet1  # default to main sheet
+# Cache attendance data for 5 minutes
+@st.cache_data(ttl=300)
+def get_attendance_data(db, query=None):
+    if db is not None:
+        try:
+            if query:
+                return list(db.attendance.find(query))
+            return list(db.attendance.find())
+        except Exception as e:
+            st.error(f"Error fetching attendance: {str(e)}")
+            return []
+    return []
 
-        worksheet.append_row(row_data)
-        return "✅ Successfully saved to Google Sheets."
-    
-    except Exception as e:
-        print(f"⚠️ Google Sheets sync failed: {e}")
-        return f"⚠️ Failed to upload to Google Sheets: {e}"
-
-
-
-# Google Sheets setup
-def get_gsheet_client():
-    creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
-    creds = service_account.Credentials.from_service_account_info(
-        creds_dict,
-        scopes=[
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-    )
-    return gspread.authorize(creds), creds
-
-
-def load_or_create_sheet(sheet_name: str):
-    client, _ = get_gsheet_client()
-    try:
-        sheet = client.open(sheet_name).sheet1
-    except gspread.exceptions.SpreadsheetNotFound:
-        # Create a new sheet if it doesn't exist
-        sheet = client.create(sheet_name).sheet1
-    return sheet
-
-def share_sheet(sheet_id, email_to_share):
-    _, creds = get_gsheet_client()
-    drive_service = build('drive', 'v3', credentials=creds)
-    permission = {
-        'type': 'user',
-        'role': 'writer',
-        'emailAddress': email_to_share
-    }
-    drive_service.permissions().create(fileId=sheet_id, body=permission).execute()
-
-# Streamlit UI
-st.title("📋 Sunday School Spreadsheet Manager")
-
-sheet_name = st.text_input("Enter Google Sheet name", "Sunday School App Sheet")
-
-if st.button("Load Sheet"):
-    sheet = load_or_create_sheet(sheet_name)
-    st.session_state["sheet"] = sheet
-    st.success("Sheet loaded successfully!")
-    st.write("Current Data:")
-    data = sheet.get_all_records()
-    st.dataframe(pd.DataFrame(data))
-
-if "sheet" in st.session_state and st.button("Share Sheet with Me"):
-    email = st.text_input("Enter your email address to share access:")
-    if email:
-        share_sheet(st.session_state["sheet"].spreadsheet.id, email)
-        st.success(f"Sheet shared with {email}!")
-    else:
-        st.warning("Please enter an email address before sharing.")
-
+# Initialize database connection
+db = get_database()
 
 # --- SIMPLE LOGIN SYSTEM ---
 def check_login():
     st.markdown("### 🔐 Login to Access App")
     password = st.text_input("Enter password", type="password")
-    if password == "Sundayschool2025":  # 🔒 Change this to your real password
+    if password == "Sundayschool2025":
         return True
     elif password:
         st.error("Incorrect password. Try again.")
@@ -142,29 +79,18 @@ def check_login():
 if not check_login():
     st.stop()
 
-
-
 # Sidebar navigation
 page = st.sidebar.selectbox("Choose a page", [
     "📋 Registration", "🗓️ Attendance", "📊 Reports", "📚 Performance", "👤 Profile", "✏️ Edit Profiles"
 ])
 
-
-
+# Get cached children data
+children = get_children_data(db)
 
 if page == "📋 Registration":
     st.title("📋 Register or Update Child Record")
 
-    # Use data/ directory for consistency
-    file_name = "data/children_records.csv"
-    os.makedirs("data", exist_ok=True)  # Ensure the folder exists
-
-    if os.path.exists(file_name):
-        df = pd.read_csv(file_name)
-        existing_names = df["Full Name"].tolist()
-    else:
-        df = pd.DataFrame()
-        existing_names = []
+    existing_names = [child["Full Name"] for child in children]
 
     st.markdown("### ✍️ New or Incomplete Registration")
 
@@ -196,202 +122,179 @@ if page == "📋 Registration":
 
         submitted = st.form_submit_button("💾 Save")
 
-    if submitted:
-        if not full_name or not group:
-            st.error("Full Name and Class are required.")
+    if submitted and full_name:
+        if db is not None:
+            try:
+                # Create child record
+                child_data = {
+                    "Full Name": full_name,
+                    "Group/Class": group,
+                    "Gender": gender,
+                    "Date of Birth": dob.isoformat(),
+                    "School": school,
+                    "Grade": grade,
+                    "Residence": residence,
+                    "Parent 1": parent1,
+                    "Contact 1": contact1,
+                    "Parent 2": parent2,
+                    "Contact 2": contact2,
+                    "Sponsored by OCM": sponsored,
+                    "Last Updated": datetime.now().isoformat()
+                }
+
+                # Update if exists, insert if new
+                result = db.children.update_one(
+                    {"Full Name": full_name},
+                    {"$set": child_data},
+                    upsert=True
+                )
+                
+                if result.upserted_id:
+                    st.success(f"✅ Added new record for {full_name}")
+                else:
+                    st.success(f"✅ Updated record for {full_name}")
+            except Exception as e:
+                st.error(f"Error saving record: {str(e)}")
         else:
-            age = (date.today() - dob).days // 365 if dob else ""
-            new_data = {
-                "Full Name": full_name,
-                "Gender": gender,
-                "Date of Birth": dob.strftime("%Y-%m-%d") if dob else "",
-                "Age": age,
-                "Group/Class": group,
-                "School": school,
-                "Grade": grade,
-                "Residence": residence,
-                "Parent 1": parent1,
-                "Contact 1": contact1,
-                "Parent 2": parent2,
-                "Contact 2": contact2,
-                "Sponsored by OCM": "Yes" if sponsored else "No"
-            }
-
-            if full_name in existing_names:
-                df.loc[df["Full Name"] == full_name] = new_data
-                st.success(f"✅ {full_name}'s info updated.")
-            else:
-                df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
-                st.success(f"✅ {full_name} added.")
-
-            df.to_csv(file_name, index=False)
-
-            # ✅ Upload to Google Sheets
-           from utils import safe_append_to_gsheet
-
-result_msg = safe_append_to_gsheet("Registration", [
-    full_name, gender, dob.strftime("%Y-%m-%d"), age, group, school, grade,
-    residence, parent1, contact1, parent2, contact2, "Yes" if sponsored else "No"
-])
-st.info(result_msg)
-
-
+            st.error("❌ Database connection failed")
 
 elif page == "🗓️ Attendance":
-    st.title("🗓️ Sunday Attendance Register (Class View)")
-
-    child_file = "data/children_records.csv"
-    att_file = "data/attendance_records.csv"
-    os.makedirs("data", exist_ok=True)
-
-    if os.path.exists(child_file):
-        children_df = pd.read_csv(child_file)
-
-        if not children_df.empty:
-            selected_class = st.selectbox("Select Class", sorted(children_df["Group/Class"].dropna().unique()))
-            class_children = children_df[children_df["Group/Class"] == selected_class]
-
-            session_date = st.date_input("Select Session Date", value=date.today(), max_value=date.today())
-
-            st.markdown("### ✏️ Mark Attendance and Requirements")
-
-            attendance_data = []
-
-            for idx, row in class_children.iterrows():
-                col1, col2, col3, col4, col5 = st.columns([2, 2, 1, 1, 1])
-
-                with col1:
-                    st.markdown(f"**{row['Full Name']}**")
-
-                with col2:
-                    status = st.selectbox("Status", ["Present", "Absent"], key=f"status_{idx}")
-
-                with col3:
-                    bible = st.selectbox("Bible", ["Yes", "No", "N/A"] if status == "Present" else ["N/A"], key=f"bible_{idx}")
-
-                with col4:
-                    pen = st.selectbox("Pen", ["Yes", "No", "N/A"] if status == "Present" else ["N/A"], key=f"pen_{idx}")
-
-                with col5:
-                    offering = st.selectbox("Offering", ["Yes", "No", "N/A"] if status == "Present" else ["N/A"], key=f"offering_{idx}")
-
-                attendance_data.append({
-                    "Child Name": row["Full Name"],
-                    "Class": selected_class,
-                    "Session Date": session_date.strftime("%Y-%m-%d"),
-                    "Attendance Status": status,
-                    "Arrival Time": "Early" if status == "Present" else "N/A",
-                    "Brought Bible": bible,
-                    "Brought Pen": pen,
-                    "Brought Offering": offering
-                })
-
-            if st.button("💾 Submit Class Attendance"):
-                if os.path.exists(att_file):
-                    att_df = pd.read_csv(att_file)
-                    att_df = pd.concat([att_df, pd.DataFrame(attendance_data)], ignore_index=True)
-                else:
-                    att_df = pd.DataFrame(attendance_data)
-
-                att_df.to_csv(att_file, index=False)
-                st.success(f"✅ Attendance for {selected_class} on {session_date.strftime('%Y-%m-%d')} saved successfully!")
-
-                # ✅ Upload attendance to Google Sheets
-                # ✅ Upload attendance to Google Sheets using safe helper
-for record in attendance_data:
-    msg = safe_append_to_gsheet("Attendance", list(record.values()))
-    st.info(msg)
-
+    st.title("🗓️ Mark Attendance")
+    
+    if db is not None:
+        if not children:
+            st.warning("No children registered yet!")
         else:
-            st.warning("⚠️ No registered children found in file.")
+            session_date = st.date_input("Session Date", date.today())
+            
+            # Get cached attendance data for the selected date
+            attendance_records = get_attendance_data(db, {"date": session_date.isoformat()})
+            attendance_dict = {str(record["child_id"]): record for record in attendance_records}
+            
+            with st.form("attendance_form"):
+                st.write("Mark attendance for each child:")
+                attendance_data = []
+                
+                # Create columns for the header
+                col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                with col1:
+                    st.write("**Name**")
+                with col2:
+                    st.write("**Present**")
+                with col3:
+                    st.write("**Bible**")
+                with col4:
+                    st.write("**Offering**")
+                
+                # Create a container for scrollable content
+                with st.container():
+                    for child in children:
+                        child_id = str(child["_id"])
+                        previous_record = attendance_dict.get(child_id, {})
+                        
+                        col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                        with col1:
+                            st.write(child["Full Name"])
+                        with col2:
+                            present = st.checkbox("", 
+                                               key=f"present_{child_id}",
+                                               value=previous_record.get("present", False))
+                        with col3:
+                            bible = st.checkbox("", 
+                                             key=f"bible_{child_id}",
+                                             value=previous_record.get("brought_bible", False))
+                        with col4:
+                            offering = st.checkbox("", 
+                                                key=f"offering_{child_id}",
+                                                value=previous_record.get("brought_offering", False))
+                        
+                        attendance_data.append({
+                            "child_id": child["_id"],
+                            "name": child["Full Name"],
+                            "present": present,
+                            "bible": bible,
+                            "offering": offering
+                        })
+                
+                submitted = st.form_submit_button("Save Attendance")
+                
+                if submitted:
+                    try:
+                        # Batch update attendance records
+                        operations = []
+                        for record in attendance_data:
+                            operations.append(
+                                {
+                                    "update_one": {
+                                        "filter": {
+                                            "child_id": record["child_id"],
+                                            "date": session_date.isoformat()
+                                        },
+                                        "update": {
+                                            "$set": {
+                                                "child_name": record["name"],
+                                                "date": session_date.isoformat(),
+                                                "present": record["present"],
+                                                "brought_bible": record["bible"],
+                                                "brought_offering": record["offering"],
+                                                "timestamp": datetime.now().isoformat()
+                                            }
+                                        },
+                                        "upsert": True
+                                    }
+                                }
+                            )
+                        
+                        if operations:
+                            db.attendance.bulk_write(operations)
+                            st.success("✅ Attendance saved successfully!")
+                            # Clear the cache for attendance data
+                            get_attendance_data.clear()
+                    except Exception as e:
+                        st.error(f"Error saving attendance: {str(e)}")
     else:
-        st.warning("⚠️ Children records file not found. Please register children first.")
-
+        st.error("❌ Database connection failed")
 
 elif page == "📊 Reports":
     st.title("📊 Attendance Reports")
-
-    att_file = "data/attendance_records.csv"
-    os.makedirs("data", exist_ok=True)
-
-    if os.path.exists(att_file):
-        att_df = pd.read_csv(att_file)
-
-        if att_df.empty:
-            st.warning("⚠️ Attendance file exists but has no records.")
-            st.stop()
-
-        # Ensure datetime format
-        att_df["Session Date"] = pd.to_datetime(att_df["Session Date"])
-        att_df["Month"] = att_df["Session Date"].dt.to_period("M").astype(str)
-        att_df["Quarter"] = att_df["Session Date"].dt.to_period("Q").astype(str)
-
-        st.subheader("📅 Monthly Attendance Trend")
-        monthly_summary = att_df.groupby(["Month", "Attendance Status"]).size().unstack(fill_value=0)
-        st.line_chart(monthly_summary)
-
-        st.subheader("📊 Quarterly Summary")
-        quarterly_summary = att_df.groupby(["Quarter", "Attendance Status"]).size().unstack(fill_value=0)
-        quarterly_summary["Total"] = quarterly_summary.sum(axis=1)
-        if "Present" in quarterly_summary.columns:
-            quarterly_summary["% Present"] = round((quarterly_summary["Present"] / quarterly_summary["Total"]) * 100, 1)
-        st.dataframe(quarterly_summary)
-
-        st.subheader("📌 Filter by Class")
-        classes = sorted(att_df["Class"].dropna().unique())
-        selected_class = st.selectbox("Choose Class", ["All"] + classes)
-        filtered_df = att_df if selected_class == "All" else att_df[att_df["Class"] == selected_class]
-
-        # Attendance summary by child
-        summary = filtered_df.groupby(["Child Name", "Attendance Status"]).size().unstack(fill_value=0)
-        summary["Total Sessions"] = summary.sum(axis=1)
-        summary["% Present"] = round((summary.get("Present", 0) / summary["Total Sessions"]) * 100, 1)
-        if "Absent" not in summary:
-            summary["Absent"] = 0
-        st.subheader("🧾 Attendance Summary")
-        st.dataframe(summary[["Present", "Absent", "Total Sessions", "% Present"]].sort_values("% Present", ascending=False))
-
-        st.subheader("📋 Individual Child Report")
-        children = sorted(filtered_df["Child Name"].unique())
-        selected_child = st.selectbox("Select a Child", children)
-
-        child_data = filtered_df[filtered_df["Child Name"] == selected_child]
-        if not child_data.empty:
-            st.markdown(f"**Total Sessions:** {len(child_data)}")
-            present_count = len(child_data[child_data["Attendance Status"] == "Present"])
-            st.markdown(f"**Present:** {present_count}")
-            st.markdown(f"**% Present:** {round((present_count / len(child_data)) * 100, 1)}%")
-
-            st.dataframe(child_data[[
-                "Session Date", "Attendance Status", "Arrival Time",
-                "Brought Bible", "Brought Pen", "Brought Offering"
-            ]])
-
-            st.download_button(
-                label=f"⬇️ Download {selected_child}'s Report",
-                data=child_data.to_csv(index=False).encode("utf-8"),
-                file_name=f"{selected_child.replace(' ', '_')}_attendance.csv",
-                mime="text/csv"
+    
+    if db is not None:
+        try:
+            report_type = st.selectbox(
+                "Select Report Type",
+                ["Daily Attendance", "Weekly Summary", "Monthly Summary"]
             )
-        else:
-            st.info("No data available for this child.")
-
-        # Top attendance chart
-        if "Present" in summary.columns:
-            st.subheader("🏅 Top Attendance")
-            st.bar_chart(summary["Present"].sort_values(ascending=False))
-
-        # Export full data
-        st.subheader("⬇️ Export Complete Dataset")
-        st.download_button(
-            label="Download Full Attendance CSV",
-            data=att_df.to_csv(index=False).encode("utf-8"),
-            file_name="full_attendance_report.csv",
-            mime="text/csv"
-        )
-
+            
+            if report_type == "Daily Attendance":
+                selected_date = st.date_input("Select Date", date.today())
+                
+                # Get attendance for selected date
+                attendance_records = list(db.attendance.find({"date": selected_date.isoformat()}))
+                
+                if attendance_records:
+                    df = pd.DataFrame(attendance_records)
+                    df = df[["child_name", "present", "brought_bible", "brought_offering"]]
+                    df.columns = ["Name", "Present", "Brought Bible", "Brought Offering"]
+                    st.dataframe(df)
+                    
+                    # Show statistics
+                    total_present = df["Present"].sum()
+                    total_bible = df["Brought Bible"].sum()
+                    total_offering = df["Brought Offering"].sum()
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Present", total_present)
+                    with col2:
+                        st.metric("Brought Bible", total_bible)
+                    with col3:
+                        st.metric("Brought Offering", total_offering)
+                else:
+                    st.info("No attendance records for selected date")
+        except Exception as e:
+            st.error(f"Error generating report: {str(e)}")
     else:
-        st.warning("⚠️ No attendance data found.")
+        st.error("❌ Database connection failed")
 
 elif page == "📚 Performance":
     st.title("📚 Performance Tracking")
@@ -471,163 +374,246 @@ elif page == "📚 Performance":
     else:
         st.warning("⚠️ Children registration file not found.")
 
-
 elif page == "👤 Profile":
     st.title("👤 Child Profile")
 
-    record_file = "data/children_records.csv"
-    att_file = "data/attendance_records.csv"
-    perf_file = "data/performance_records.csv"
+    if db is not None:
+        try:
+            # Get all children from MongoDB
+            children = list(db.children.find())
+            
+            if not children:
+                st.warning("⚠️ No registered children.")
+                st.stop()
 
-    if os.path.exists(record_file):
-        children_df = pd.read_csv(record_file)
-        child_names = sorted(children_df["Full Name"].dropna().unique().tolist())
-        selected_child = st.selectbox("Select a Child", child_names)
+            child_names = sorted([child["Full Name"] for child in children])
+            selected_child = st.selectbox("Select a Child", child_names)
 
-        match = children_df[children_df["Full Name"] == selected_child]
-        if match.empty:
-            st.error("Child not found in records.")
-        else:
-            child_info = match.iloc[0]
+            # Find the selected child's data
+            child_info = next((child for child in children if child["Full Name"] == selected_child), None)
+            
+            if child_info:
+                st.subheader("📋 Personal Info")
+                cols = st.columns([1, 2])
+                
+                with cols[0]:
+                    image_path = f"photos/{selected_child.replace(' ', '_')}.jpg"
+                    if os.path.exists(image_path):
+                        st.image(image_path, caption="Profile Photo", use_column_width=True)
+                    else:
+                        st.info("📷 No profile photo found.")
 
-            st.subheader("📋 Personal Info")
-            cols = st.columns([1, 2])
-            with cols[0]:
-                image_path = f"photos/{selected_child.replace(' ', '_')}.jpg"
-                if os.path.exists(image_path):
-                    st.image(image_path, caption="Profile Photo", use_column_width=True)
-                else:
-                    st.info("📷 No profile photo found.")
+                with cols[1]:
+                    st.markdown(f"**Name:** {child_info['Full Name']}")
+                    st.markdown(f"**Gender:** {child_info.get('Gender', 'N/A')}")
+                    st.markdown(f"**Date of Birth:** {child_info.get('Date of Birth', 'N/A')}")
+                    st.markdown(f"**Grade/Form:** {child_info.get('Grade', 'N/A')}")
+                    st.markdown(f"**School:** {child_info.get('School', 'N/A')}")
+                    st.markdown(f"**Group/Class:** {child_info.get('Group/Class', 'N/A')}")
+                    st.markdown(f"**Residence:** {child_info.get('Residence', 'N/A')}")
+                    
+                    if child_info.get('Parent 1'):
+                        st.markdown(f"**Parent 1:** {child_info['Parent 1']} ({child_info.get('Contact 1', 'No contact')})")
+                    if child_info.get('Parent 2'):
+                        st.markdown(f"**Parent 2:** {child_info['Parent 2']} ({child_info.get('Contact 2', 'No contact')})")
+                    
+                    st.markdown(f"**Sponsored by OCM:** {'Yes' if child_info.get('Sponsored by OCM') else 'No'}")
+                    st.markdown(f"**Last Updated:** {child_info.get('Last Updated', 'N/A')}")
 
-            with cols[1]:
-                st.markdown(f"**Name:** {child_info['Full Name']}")
-                st.markdown(f"**Age:** {child_info.get('Age', 'N/A')}")
-                st.markdown(f"**Gender:** {child_info.get('Gender', 'N/A')}")
-                st.markdown(f"**Grade/Form:** {child_info.get('Grade', 'N/A')}")
-                st.markdown(f"**School:** {child_info.get('School', 'N/A')}")
-                st.markdown(f"**Group/Class:** {child_info.get('Group/Class', 'N/A')}")
-                st.markdown(f"**Residence:** {child_info.get('Residence', 'N/A')}")
-                st.markdown(f"**Parent 1:** {child_info.get('Parent 1')} ({child_info.get('Contact 1')})")
-                if pd.notna(child_info.get("Parent 2", "")):
-                    st.markdown(f"**Parent 2:** {child_info.get('Parent 2')} ({child_info.get('Contact 2')})")
-                st.markdown(f"**Sponsored by OCM:** {child_info.get('Sponsored by OCM', 'No')}")
+                # Attendance Overview
+                st.subheader("📅 Attendance Records")
+                try:
+                    attendance_records = list(db.attendance.find({"child_name": selected_child}))
+                    if attendance_records:
+                        att_df = pd.DataFrame(attendance_records)
+                        att_df = att_df[["date", "present", "brought_bible", "brought_offering"]]
+                        att_df.columns = ["Date", "Present", "Brought Bible", "Brought Offering"]
+                        att_df["Date"] = pd.to_datetime(att_df["Date"]).dt.date
+                        att_df = att_df.sort_values("Date", ascending=False)
+                        
+                        st.dataframe(att_df)
 
-            # Attendance Overview
-            if os.path.exists(att_file):
-                att_df = pd.read_csv(att_file)
-                att_df = att_df[att_df["Child Name"] == selected_child]
-                if not att_df.empty:
-                    st.subheader("📅 Attendance Records")
-                    st.dataframe(att_df[["Session Date", "Attendance Status", "Arrival Time", "Brought Bible", "Brought Pen", "Brought Offering"]])
+                        st.subheader("📦 Requirements Summary")
+                        total_sessions = len(attendance_records)
+                        present_count = sum(1 for record in attendance_records if record["present"])
+                        bible_count = sum(1 for record in attendance_records if record["brought_bible"])
+                        offering_count = sum(1 for record in attendance_records if record["brought_offering"])
 
-                    st.subheader("📦 Requirements Summary")
-                    for item in ["Brought Bible", "Brought Pen", "Brought Offering"]:
-                        counts = att_df[item].value_counts().to_dict()
-                        yes = counts.get("Yes", 0)
-                        no = counts.get("No", 0)
-                        total = yes + no
-                        percent = round((yes / total) * 100, 1) if total > 0 else 0
-                        st.markdown(f"**{item}:** {yes} times ✅ ({percent}%)")
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("Total Sessions", total_sessions)
+                        with col2:
+                            attendance_rate = (present_count / total_sessions * 100) if total_sessions > 0 else 0
+                            st.metric("Attendance Rate", f"{attendance_rate:.1f}%")
+                        with col3:
+                            bible_rate = (bible_count / total_sessions * 100) if total_sessions > 0 else 0
+                            st.metric("Bible Rate", f"{bible_rate:.1f}%")
+                        with col4:
+                            offering_rate = (offering_count / total_sessions * 100) if total_sessions > 0 else 0
+                            st.metric("Offering Rate", f"{offering_rate:.1f}%")
 
-                    st.subheader("📈 Attendance Chart")
-                    st.bar_chart(att_df["Attendance Status"].value_counts())
-
-                    st.download_button(
-                        label="⬇️ Download Attendance CSV",
-                        data=att_df.to_csv(index=False).encode("utf-8"),
-                        file_name=f"{selected_child.replace(' ', '_')}_attendance.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.info("No attendance data found.")
-
-            # Performance Overview
-            if os.path.exists(perf_file):
-                perf_df = pd.read_csv(perf_file)
-                child_perf = perf_df[perf_df["Child Name"] == selected_child]
-                if not child_perf.empty:
-                    st.subheader("📚 School Performance")
-                    st.dataframe(child_perf[["Year", "Term", "Math", "English", "Kiswahili", "Science", "CRE", "Other", "Remarks"]])
-                    st.download_button(
-                        label="⬇️ Download Performance CSV",
-                        data=child_perf.to_csv(index=False).encode("utf-8"),
-                        file_name=f"{selected_child.replace(' ', '_')}_performance.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.info("No performance records found.")
+                        # Export option
+                        csv_data = att_df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="⬇️ Download Attendance Records",
+                            data=csv_data,
+                            file_name=f"{selected_child.replace(' ', '_')}_attendance.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.info("No attendance records found for this child.")
+                except Exception as e:
+                    st.error(f"Error fetching attendance records: {str(e)}")
+            else:
+                st.error("Child not found in database.")
+        except Exception as e:
+            st.error(f"Error accessing database: {str(e)}")
     else:
-        st.warning("⚠️ Children records not found. Please register students.")
+        st.error("❌ Database connection failed")
 
 elif page == "✏️ Edit Profiles":
-    st.title("✏️ Edit Child Profile")
+    st.title("✏️ Edit or Delete Child Profile")
 
-    file_name = "data/children_records.csv"
+    if db is not None:
+        try:
+            # Get all children from MongoDB
+            children = list(db.children.find())
+            
+            if not children:
+                st.warning("⚠️ No registered children.")
+                st.stop()
 
-    if not os.path.exists(file_name):
-        st.warning("⚠️ No children data found.")
+            child_names = sorted([child["Full Name"] for child in children])
+            selected_child = st.selectbox("Select a Child", child_names)
+
+            # Find the selected child's data
+            child_info = next((child for child in children if child["Full Name"] == selected_child), None)
+
+            if child_info:
+                # Add delete button at the top
+                col1, col2 = st.columns([3, 1])
+                with col2:
+                    if st.button("🗑️ Delete Profile", type="secondary", help="Permanently delete this child's profile"):
+                        try:
+                            # Delete child's records
+                            db.children.delete_one({"_id": child_info["_id"]})
+                            # Delete associated attendance records
+                            db.attendance.delete_many({"child_id": child_info["_id"]})
+                            st.success(f"✅ Deleted {selected_child}'s profile and all associated records")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error deleting profile: {str(e)}")
+                            st.stop()
+
+                with st.form("edit_form"):
+                    st.subheader("Edit Information")
+                    
+                    full_name = st.text_input("Full Name", value=child_info["Full Name"])
+                    gender = st.selectbox(
+                        "Gender", 
+                        ["", "Male", "Female"], 
+                        index=["", "Male", "Female"].index(child_info.get("Gender", "")) if child_info.get("Gender") in ["Male", "Female"] else 0
+                    )
+                    
+                    # Convert ISO date string to date object if it exists
+                    current_dob = None
+                    if child_info.get("Date of Birth"):
+                        try:
+                            current_dob = datetime.fromisoformat(child_info["Date of Birth"]).date()
+                        except:
+                            current_dob = date.today()
+                    
+                    dob = st.date_input(
+                        "Date of Birth",
+                        value=current_dob or date.today(),
+                        max_value=date.today()
+                    )
+                    
+                    school = st.text_input("School Name", value=child_info.get("School", ""))
+                    
+                    current_grade = child_info.get("Grade", "")
+                    grade_options = [""] + [
+                        "PP1", "PP2", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
+                        "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
+                        "Form 1", "Form 2", "Form 3", "Form 4"
+                    ]
+                    grade = st.selectbox(
+                        "Grade / Form",
+                        grade_options,
+                        index=grade_options.index(current_grade) if current_grade in grade_options else 0
+                    )
+                    
+                    group_options = [
+                        "Chosen Generation(grade PP1–PP2)",
+                        "Chosen Nation(grade 1–3)",
+                        "Priesthood (grade 4–6)",
+                        "Preisthood 2(grade 7–12)",
+                        "Priesthood 2(form 1–4)"
+                    ]
+                    current_group = child_info.get("Group/Class", group_options[0])
+                    group = st.selectbox(
+                        "Group/Class",
+                        group_options,
+                        index=group_options.index(current_group) if current_group in group_options else 0
+                    )
+                    
+                    residence = st.text_input("Residence", value=child_info.get("Residence", ""))
+                    parent1 = st.text_input("Parent/Guardian 1", value=child_info.get("Parent 1", ""))
+                    contact1 = st.text_input("Contact 1", value=child_info.get("Contact 1", ""))
+                    parent2 = st.text_input("Parent/Guardian 2", value=child_info.get("Parent 2", ""))
+                    contact2 = st.text_input("Contact 2", value=child_info.get("Contact 2", ""))
+                    sponsored = st.checkbox("Sponsored by OCM", value=child_info.get("Sponsored by OCM", False))
+
+                    submitted = st.form_submit_button("💾 Save Changes")
+
+                    if submitted:
+                        try:
+                            # Prepare updated data
+                            updated_data = {
+                                "Full Name": full_name,
+                                "Gender": gender,
+                                "Date of Birth": dob.isoformat(),
+                                "School": school,
+                                "Grade": grade,
+                                "Group/Class": group,
+                                "Residence": residence,
+                                "Parent 1": parent1,
+                                "Contact 1": contact1,
+                                "Parent 2": parent2,
+                                "Contact 2": contact2,
+                                "Sponsored by OCM": sponsored,
+                                "Last Updated": datetime.now().isoformat()
+                            }
+
+                            # Update the record
+                            result = db.children.update_one(
+                                {"_id": child_info["_id"]},
+                                {"$set": updated_data}
+                            )
+
+                            if result.modified_count > 0:
+                                st.success("✅ Profile updated successfully!")
+                                # If name changed, update attendance records
+                                if full_name != child_info["Full Name"]:
+                                    db.attendance.update_many(
+                                        {"child_id": child_info["_id"]},
+                                        {"$set": {"child_name": full_name}}
+                                    )
+                            else:
+                                st.info("No changes detected.")
+                            
+                            # Show current data
+                            st.subheader("Current Information")
+                            for key, value in updated_data.items():
+                                if key != "Last Updated":
+                                    st.write(f"**{key}:** {value}")
+                                    
+                        except Exception as e:
+                            st.error(f"Error updating profile: {str(e)}")
+            else:
+                st.error("Child not found in database.")
+        except Exception as e:
+            st.error(f"Error accessing database: {str(e)}")
     else:
-        df = pd.read_csv(file_name)
-        child_names = df["Full Name"].dropna().unique().tolist()
-
-        if not child_names:
-            st.info("No registered children to edit.")
-        else:
-            selected_child = st.selectbox("Select a Child", sorted(child_names))
-            child_data = df[df["Full Name"] == selected_child].iloc[0]
-
-            with st.form("edit_form"):
-                full_name = st.text_input("Full Name", value=child_data["Full Name"])
-                gender = st.selectbox("Gender", ["", "Male", "Female"], index=["", "Male", "Female"].index(child_data.get("Gender", "")))
-                dob = st.date_input("Date of Birth", value=pd.to_datetime(child_data["Date of Birth"]) if pd.notna(child_data["Date of Birth"]) else date.today())
-                school = st.text_input("School Name", value=child_data.get("School", ""))
-                grade = st.selectbox("Grade / Form", [""] + [
-                    "PP1", "PP2", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
-                    "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
-                    "Form 1", "Form 2", "Form 3", "Form 4"
-                ], index=max(0, [""] + [
-                    "PP1", "PP2", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
-                    "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
-                    "Form 1", "Form 2", "Form 3", "Form 4"
-                ].index(child_data.get("Grade", "")) if child_data.get("Grade", "") in [
-                    "PP1", "PP2", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
-                    "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
-                    "Form 1", "Form 2", "Form 3", "Form 4"
-                ] else 0))
-                group = st.selectbox("Group/Class", df["Group/Class"].dropna().unique().tolist(), index=df["Group/Class"].dropna().unique().tolist().index(child_data["Group/Class"]))
-                residence = st.text_input("Residence", value=child_data.get("Residence", ""))
-                parent1 = st.text_input("Parent/Guardian 1", value=child_data.get("Parent 1", ""))
-                contact1 = st.text_input("Contact 1", value=child_data.get("Contact 1", ""))
-                parent2 = st.text_input("Parent/Guardian 2", value=child_data.get("Parent 2", ""))
-                contact2 = st.text_input("Contact 2", value=child_data.get("Contact 2", ""))
-                sponsored = st.checkbox("Sponsored by OCM", value=child_data.get("Sponsored by OCM", "No") == "Yes")
-
-                submitted = st.form_submit_button("💾 Save Changes")
-
-            if submitted:
-                df.loc[df["Full Name"] == selected_child, :] = {
-                    "Full Name": full_name,
-                    "Gender": gender,
-                    "Date of Birth": dob.strftime("%Y-%m-%d"),
-                    "Age": (date.today() - dob).days // 365,
-                    "Group/Class": group,
-                    "School": school,
-                    "Grade": grade,
-                    "Residence": residence,
-                    "Parent 1": parent1,
-                    "Contact 1": contact1,
-                    "Parent 2": parent2,
-                    "Contact 2": contact2,
-                    "Sponsored by OCM": "Yes" if sponsored else "No"
-                }
-                df.to_csv(file_name, index=False)
-                st.success("✅ Profile updated successfully!")
-messages = []
-for record in attendance_data:
-    result = safe_append_to_gsheet("Attendance", list(record.values()))
-    messages.append(f"{record['Child Name']}: {result}")
-
-st.markdown("### 📝 Sync Results")
-for m in messages:
-    st.info(m)
+        st.error("❌ Database connection failed")
 
