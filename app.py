@@ -392,6 +392,203 @@ elif page == "📊 Reports":
                     st.markdown("**Absent OCM Children:**")
                     absent_ocm = ocm_children[ocm_children['status'] == 'Absent']
                     st.dataframe(absent_ocm[['full_name', 'class_group']])
+        elif report_type == "Monthly Summary":
+            st.markdown("### 📊 Monthly Attendance Overview")
+            
+            # Get current month and year
+            current_date = datetime.now()
+            selected_month = st.selectbox(
+                "Select Month",
+                range(1, 13),
+                index=current_date.month - 1
+            )
+            selected_year = st.selectbox(
+                "Select Year",
+                range(current_date.year - 2, current_date.year + 1),
+                index=2
+            )
+            
+            # Filter attendance for selected month
+            monthly_attendance = attendance_df[
+                (pd.to_datetime(attendance_df['session_date']).dt.month == selected_month) &
+                (pd.to_datetime(attendance_df['session_date']).dt.year == selected_year)
+            ]
+            
+            if not monthly_attendance.empty:
+                # Get unique dates in the month
+                session_dates = pd.to_datetime(monthly_attendance['session_date']).unique()
+                total_sessions = len(session_dates)
+                
+                # Overall Statistics
+                total_children = len(children_df)
+                avg_attendance = len(monthly_attendance) / total_sessions if total_sessions > 0 else 0
+                attendance_rate = (avg_attendance / total_children * 100) if total_children > 0 else 0
+                
+                # Display overall statistics
+                st.markdown("#### 📈 Overall Statistics")
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Sessions", total_sessions)
+                with col2:
+                    st.metric("Total Children", total_children)
+                with col3:
+                    st.metric("Avg. Attendance", f"{avg_attendance:.1f}")
+                with col4:
+                    st.metric("Attendance Rate", f"{attendance_rate:.1f}%")
+                
+                # Participation Trends
+                st.markdown("#### 📊 Monthly Participation Trends")
+                
+                # Calculate daily stats
+                daily_stats = []
+                for session_date in session_dates:
+                    day_attendance = monthly_attendance[
+                        pd.to_datetime(monthly_attendance['session_date']) == session_date
+                    ]
+                    stats = {
+                        'Date': session_date.strftime('%Y-%m-%d'),
+                        'Present': len(day_attendance),
+                        'Early': day_attendance['early'].sum(),
+                        'Books': day_attendance['has_book'].sum(),
+                        'Pens': day_attendance['has_pen'].sum(),
+                        'Bibles': day_attendance['has_bible'].sum(),
+                        'Offering': day_attendance['gave_offering'].sum()
+                    }
+                    daily_stats.append(stats)
+                
+                trends_df = pd.DataFrame(daily_stats)
+                st.line_chart(trends_df.set_index('Date')[['Present', 'Early', 'Books', 'Pens', 'Bibles', 'Offering']])
+                
+                # Class-wise Monthly Statistics
+                st.markdown("#### 📚 Class-wise Monthly Statistics")
+                
+                for class_name in children_df['class_group'].unique():
+                    st.markdown(f"**{class_name}**")
+                    
+                    # Get children in this class
+                    class_children = children_df[children_df['class_group'] == class_name]
+                    class_attendance = monthly_attendance[
+                        monthly_attendance['child_id'].isin(class_children['id'])
+                    ]
+                    
+                    if not class_attendance.empty:
+                        # Calculate class statistics
+                        total_class_children = len(class_children)
+                        avg_class_attendance = len(class_attendance) / total_sessions if total_sessions > 0 else 0
+                        class_attendance_rate = (avg_class_attendance / total_class_children * 100) if total_class_children > 0 else 0
+                        
+                        # Display class metrics
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Total Children", total_class_children)
+                        with col2:
+                            st.metric("Avg. Attendance", f"{avg_class_attendance:.1f}")
+                        with col3:
+                            st.metric("Attendance Rate", f"{class_attendance_rate:.1f}%")
+                        
+                        # Calculate participation rates
+                        early_rate = (class_attendance['early'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
+                        book_rate = (class_attendance['has_book'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
+                        pen_rate = (class_attendance['has_pen'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
+                        bible_rate = (class_attendance['has_bible'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
+                        offering_rate = (class_attendance['gave_offering'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
+                        
+                        # Display participation metrics
+                        col1, col2, col3, col4, col5 = st.columns(5)
+                        with col1:
+                            st.metric("Early %", f"{early_rate:.1f}%")
+                        with col2:
+                            st.metric("Books %", f"{book_rate:.1f}%")
+                        with col3:
+                            st.metric("Pens %", f"{pen_rate:.1f}%")
+                        with col4:
+                            st.metric("Bibles %", f"{bible_rate:.1f}%")
+                        with col5:
+                            st.metric("Offering %", f"{offering_rate:.1f}%")
+                        
+                        # Show attendance details
+                        with st.expander("View Detailed Attendance"):
+                            # Merge attendance with children data
+                            detailed_attendance = class_attendance.merge(
+                                class_children[['id', 'full_name']],
+                                left_on='child_id',
+                                right_on='id',
+                                suffixes=('_attendance', '_child')
+                            )
+                            
+                            # Calculate attendance count per child
+                            attendance_counts = detailed_attendance.groupby('full_name').size().reset_index()
+                            attendance_counts.columns = ['Name', 'Sessions Attended']
+                            attendance_counts['Attendance Rate'] = (attendance_counts['Sessions Attended'] / total_sessions * 100).round(1)
+                            
+                            # Display the detailed attendance
+                            st.dataframe(attendance_counts, use_container_width=True)
+                
+                # OCM Children Monthly Statistics
+                st.markdown("#### 👥 OCM Children Monthly Statistics")
+                ocm_children = children_df[children_df['sponsored'] == True]
+                
+                if not ocm_children.empty:
+                    ocm_attendance = monthly_attendance[
+                        monthly_attendance['child_id'].isin(ocm_children['id'])
+                    ]
+                    
+                    if not ocm_attendance.empty:
+                        # Calculate OCM statistics
+                        total_ocm = len(ocm_children)
+                        avg_ocm_attendance = len(ocm_attendance) / total_sessions if total_sessions > 0 else 0
+                        ocm_attendance_rate = (avg_ocm_attendance / total_ocm * 100) if total_ocm > 0 else 0
+                        
+                        # Display OCM metrics
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Total OCM Children", total_ocm)
+                        with col2:
+                            st.metric("Avg. Attendance", f"{avg_ocm_attendance:.1f}")
+                        with col3:
+                            st.metric("Attendance Rate", f"{ocm_attendance_rate:.1f}%")
+                        
+                        # Calculate participation rates
+                        ocm_early_rate = (ocm_attendance['early'].sum() / len(ocm_attendance) * 100) if len(ocm_attendance) > 0 else 0
+                        ocm_book_rate = (ocm_attendance['has_book'].sum() / len(ocm_attendance) * 100) if len(ocm_attendance) > 0 else 0
+                        ocm_pen_rate = (ocm_attendance['has_pen'].sum() / len(ocm_attendance) * 100) if len(ocm_attendance) > 0 else 0
+                        ocm_bible_rate = (ocm_attendance['has_bible'].sum() / len(ocm_attendance) * 100) if len(ocm_attendance) > 0 else 0
+                        ocm_offering_rate = (ocm_attendance['gave_offering'].sum() / len(ocm_attendance) * 100) if len(ocm_attendance) > 0 else 0
+                        
+                        # Display participation metrics
+                        col1, col2, col3, col4, col5 = st.columns(5)
+                        with col1:
+                            st.metric("Early %", f"{ocm_early_rate:.1f}%")
+                        with col2:
+                            st.metric("Books %", f"{ocm_book_rate:.1f}%")
+                        with col3:
+                            st.metric("Pens %", f"{ocm_pen_rate:.1f}%")
+                        with col4:
+                            st.metric("Bibles %", f"{ocm_bible_rate:.1f}%")
+                        with col5:
+                            st.metric("Offering %", f"{ocm_offering_rate:.1f}%")
+                        
+                        # Show OCM attendance details
+                        with st.expander("View Detailed OCM Attendance"):
+                            # Merge attendance with children data
+                            detailed_ocm = ocm_attendance.merge(
+                                ocm_children[['id', 'full_name', 'class_group']],
+                                left_on='child_id',
+                                right_on='id',
+                                suffixes=('_attendance', '_child')
+                            )
+                            
+                            # Calculate attendance count per child
+                            ocm_counts = detailed_ocm.groupby(['full_name', 'class_group']).size().reset_index()
+                            ocm_counts.columns = ['Name', 'Class', 'Sessions Attended']
+                            ocm_counts['Attendance Rate'] = (ocm_counts['Sessions Attended'] / total_sessions * 100).round(1)
+                            
+                            # Display the detailed attendance
+                            st.dataframe(ocm_counts, use_container_width=True)
+                else:
+                    st.info("No OCM sponsored children registered")
+            else:
+                st.info(f"No attendance records found for {datetime(selected_year, selected_month, 1).strftime('%B %Y')}")
     else:
         st.warning("No attendance data available yet!")
 
@@ -421,47 +618,167 @@ elif page == "👤 Profile":
             if 'id' not in child_info:
                 st.error("Error: Child record is missing ID field")
                 st.stop()
-                
-            # Get attendance records for this child
+            
+            # Get all attendance records for this child
             child_attendance = attendance_df[attendance_df['child_id'] == child_info['id']]
             
             if not child_attendance.empty:
-                # Create a display-friendly version of the attendance data
-                display_columns = ['session_date', 'present', 'early', 'has_book', 'has_pen', 'has_bible', 'gave_offering']
-                display_attendance = child_attendance[display_columns].copy()
-                display_attendance.columns = ['Date', 'Present', 'Early', 'Book', 'Pen', 'Bible', 'Offering']
+                # Get the child's class group
+                class_group = child_info['class_group']
                 
-                # Sort by date in descending order
-                display_attendance = display_attendance.sort_values('Date', ascending=False)
-                st.dataframe(display_attendance)
+                # Get the child's first attendance date
+                first_attendance_date = pd.to_datetime(child_attendance['session_date']).min()
                 
-                # Calculate statistics
-                total_sessions = len(child_attendance)
-                present_count = child_attendance['present'].sum() if 'present' in child_attendance else 0
-                early_count = child_attendance['early'].sum() if 'early' in child_attendance else 0
-                book_count = child_attendance['has_book'].sum() if 'has_book' in child_attendance else 0
-                pen_count = child_attendance['has_pen'].sum() if 'has_pen' in child_attendance else 0
-                bible_count = child_attendance['has_bible'].sum() if 'has_bible' in child_attendance else 0
-                offering_count = child_attendance['gave_offering'].sum() if 'gave_offering' in child_attendance else 0
+                # Get all class sessions since the child's first attendance
+                class_sessions = attendance_df[
+                    (pd.to_datetime(attendance_df['session_date']) >= first_attendance_date)
+                ]['session_date'].unique()
+                total_available_sessions = len(class_sessions)
+                
+                # Calculate attendance statistics
+                present_count = len(child_attendance)
+                absent_count = total_available_sessions - present_count
+                attendance_rate = (present_count / total_available_sessions * 100) if total_available_sessions > 0 else 0
+                
+                # Calculate participation rates
+                early_rate = (child_attendance['early'].sum() / present_count * 100) if present_count > 0 else 0
+                book_rate = (child_attendance['has_book'].sum() / present_count * 100) if present_count > 0 else 0
+                pen_rate = (child_attendance['has_pen'].sum() / present_count * 100) if present_count > 0 else 0
+                bible_rate = (child_attendance['has_bible'].sum() / present_count * 100) if present_count > 0 else 0
+                offering_rate = (child_attendance['gave_offering'].sum() / present_count * 100) if present_count > 0 else 0
+                
+                # Display attendance summary
+                st.markdown("#### 📊 Attendance Summary")
+                st.markdown(f"**First Attendance:** {first_attendance_date.strftime('%Y-%m-%d')}")
+                st.markdown(f"**Total Available Sessions:** {total_available_sessions}")
                 
                 # Display metrics in two rows
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Total Sessions", total_sessions)
+                    st.metric("Sessions Present", present_count)
                 with col2:
-                    st.metric("Attendance Rate", f"{(present_count/total_sessions*100):.1f}%" if total_sessions > 0 else "0%")
+                    st.metric("Sessions Absent", absent_count)
                 with col3:
-                    st.metric("Early Rate", f"{(early_count/total_sessions*100):.1f}%" if total_sessions > 0 else "0%")
-                with col4:
-                    st.metric("Book Rate", f"{(book_count/total_sessions*100):.1f}%" if total_sessions > 0 else "0%")
+                    st.metric("Attendance Rate", f"{attendance_rate:.1f}%")
                 
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2, col3, col4, col5 = st.columns(5)
                 with col1:
-                    st.metric("Pen Rate", f"{(pen_count/total_sessions*100):.1f}%" if total_sessions > 0 else "0%")
+                    st.metric("Early Rate", f"{early_rate:.1f}%")
                 with col2:
-                    st.metric("Bible Rate", f"{(bible_count/total_sessions*100):.1f}%" if total_sessions > 0 else "0%")
+                    st.metric("Book Rate", f"{book_rate:.1f}%")
                 with col3:
-                    st.metric("Offering Rate", f"{(offering_count/total_sessions*100):.1f}%" if total_sessions > 0 else "0%")
+                    st.metric("Pen Rate", f"{pen_rate:.1f}%")
+                with col4:
+                    st.metric("Bible Rate", f"{bible_rate:.1f}%")
+                with col5:
+                    st.metric("Offering Rate", f"{offering_rate:.1f}%")
+                
+                # Show detailed attendance records
+                st.markdown("#### 📅 Detailed Attendance Records")
+                
+                # Create a DataFrame with all sessions
+                all_sessions_df = pd.DataFrame({
+                    'session_date': class_sessions
+                })
+                
+                # Merge with actual attendance to get present/absent status
+                detailed_attendance = all_sessions_df.merge(
+                    child_attendance[['session_date', 'early', 'has_book', 'has_pen', 'has_bible', 'gave_offering']],
+                    on='session_date',
+                    how='left'
+                )
+                
+                # Fill NaN values (absent days)
+                detailed_attendance = detailed_attendance.fillna(False)
+                
+                # Add status column
+                detailed_attendance['Status'] = detailed_attendance.apply(
+                    lambda x: 'Present' if not pd.isna(x['early']) else 'Absent',
+                    axis=1
+                )
+                
+                # Format for display
+                display_df = detailed_attendance.copy()
+                display_df['Date'] = pd.to_datetime(display_df['session_date']).dt.strftime('%Y-%m-%d')
+                display_df['Early'] = display_df['early'].map({True: '✅', False: '❌'})
+                display_df['Book'] = display_df['has_book'].map({True: '✅', False: '❌'})
+                display_df['Pen'] = display_df['has_pen'].map({True: '✅', False: '❌'})
+                display_df['Bible'] = display_df['has_bible'].map({True: '✅', False: '❌'})
+                display_df['Offering'] = display_df['gave_offering'].map({True: '✅', False: '❌'})
+                
+                # Display the records
+                st.dataframe(
+                    display_df[['Date', 'Status', 'Early', 'Book', 'Pen', 'Bible', 'Offering']],
+                    use_container_width=True
+                )
+                
+                # Show trends
+                st.markdown("#### 📈 Attendance Trends")
+                
+                # Calculate monthly attendance rates
+                monthly_stats = detailed_attendance.copy()
+                monthly_stats['month'] = pd.to_datetime(monthly_stats['session_date']).dt.strftime('%Y-%m')
+                monthly_attendance = monthly_stats.groupby('month').agg({
+                    'Status': lambda x: (x == 'Present').mean() * 100,
+                    'early': 'mean',
+                    'has_book': 'mean',
+                    'has_pen': 'mean',
+                    'has_bible': 'mean',
+                    'gave_offering': 'mean'
+                }).reset_index()
+                
+                # Multiply by 100 to get percentages
+                for col in ['early', 'has_book', 'has_pen', 'has_bible', 'gave_offering']:
+                    monthly_attendance[col] = monthly_attendance[col] * 100
+                
+                # Rename columns for display
+                monthly_attendance.columns = ['Month', 'Attendance', 'Early', 'Book', 'Pen', 'Bible', 'Offering']
+                
+                # Create line chart
+                st.line_chart(
+                    monthly_attendance.set_index('Month')[['Attendance', 'Early', 'Book', 'Pen', 'Bible', 'Offering']]
+                )
+                
+                # Compare with class averages
+                st.markdown("#### 🔄 Comparison with Class Averages")
+                
+                # Get class attendance data
+                class_attendance = attendance_df[
+                    attendance_df['child_id'].isin(
+                        children_df[children_df['class_group'] == class_group]['id']
+                    )
+                ]
+                
+                if not class_attendance.empty:
+                    # Calculate class averages
+                    total_class_children = len(children_df[children_df['class_group'] == class_group])
+                    class_present_rate = (len(class_attendance) / (total_class_children * total_available_sessions) * 100)
+                    class_early_rate = (class_attendance['early'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
+                    class_book_rate = (class_attendance['has_book'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
+                    class_pen_rate = (class_attendance['has_pen'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
+                    class_bible_rate = (class_attendance['has_bible'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
+                    class_offering_rate = (class_attendance['gave_offering'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
+                    
+                    # Display comparison
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric(
+                            "Attendance vs Class",
+                            f"{attendance_rate:.1f}%",
+                            f"{(attendance_rate - class_present_rate):.1f}%"
+                        )
+                    with col2:
+                        st.metric(
+                            "Early vs Class",
+                            f"{early_rate:.1f}%",
+                            f"{(early_rate - class_early_rate):.1f}%"
+                        )
+                    with col3:
+                        st.metric(
+                            "Participation vs Class",
+                            f"{((book_rate + pen_rate + bible_rate) / 3):.1f}%",
+                            f"{((book_rate + pen_rate + bible_rate) / 3 - (class_book_rate + class_pen_rate + class_bible_rate) / 3):.1f}%"
+                        )
             else:
                 st.info("No attendance records found for this child")
         except Exception as e:
