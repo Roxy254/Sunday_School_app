@@ -89,6 +89,9 @@ def migrate_data():
                 "child_id": children_map[child_name],
                 "session_date": record["Date"],
                 "present": record["Present"] == "Yes",
+                "early": record.get("Early", "No") == "Yes",
+                "has_book": record.get("Brought Book", "No") == "Yes",
+                "has_pen": record.get("Brought Pen", "No") == "Yes",
                 "has_bible": record["Brought Bible"] == "Yes",
                 "gave_offering": record["Brought Offering"] == "Yes",
                 "created_at": datetime.now().isoformat()

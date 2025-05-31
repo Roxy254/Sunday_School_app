@@ -109,14 +109,17 @@ def save_attendance(attendance_data):
                 'has_book': attendance_data.get('has_book', False),
                 'has_pen': attendance_data.get('has_pen', False),
                 'has_bible': attendance_data.get('has_bible', False),
-                'gave_offering': attendance_data.get('gave_offering', False)
+                'gave_offering': attendance_data.get('gave_offering', False),
+                'updated_at': datetime.now().isoformat()
             }).eq(
                 'child_id', attendance_data['child_id']
             ).eq(
                 'session_date', attendance_data['session_date']
             ).execute()
         else:
-            # Insert new record
+            # Add created_at timestamp for new records
+            attendance_data['created_at'] = datetime.now().isoformat()
+            # Insert new record with all fields
             response = supabase.table('attendance').insert(attendance_data).execute()
         
         return True if response.data else False
