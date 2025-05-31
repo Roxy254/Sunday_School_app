@@ -301,11 +301,22 @@ elif page == "📊 Reports":
                     
                     # Show present children with their details
                     st.markdown("**Present Children Details:**")
-                    present_df = present_df.merge(present_children[['id', 'full_name']], left_on='child_id', right_on='id')
-                    
+                    # Debug information
+                    st.write("Debug - present_df columns:", present_df.columns.tolist())
+                    st.write("Debug - present_children columns:", present_children[['id', 'full_name']].columns.tolist())
+
+                    # Ensure we have the right columns before merging
+                    present_df = present_df.rename(columns={'id': 'attendance_id'})  # Rename the id column to avoid conflicts
+                    present_df = present_df.merge(
+                        present_children[['id', 'full_name']],
+                        left_on='child_id',
+                        right_on='id',
+                        how='left'
+                    )
+
                     # Create display DataFrame with only the columns that exist in the database
-                    display_df = present_df[['full_name', 'present', 'has_bible', 'gave_offering']]
-                    display_df.columns = ['Name', 'Present', 'Bible', 'Offering']
+                    display_df = present_df[['full_name', 'early', 'has_book', 'has_pen', 'has_bible', 'gave_offering']]
+                    display_df.columns = ['Name', 'Early', 'Book', 'Pen', 'Bible', 'Offering']
                     st.dataframe(display_df)
                 
                 # Show absent children in this class
