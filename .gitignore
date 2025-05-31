@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+venv311/
+ENV/
+env/
+*.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Streamlit
+.streamlit/secrets.toml
+.streamlit/credentials.json
+
+# Local development
+*.csv
+!backups/*.csv
+*.log
+*.sqlite
+.DS_Store
+Thumbs.db
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Backup files
+*.bak
+
+# Windows specific
+*.exe
+*.bat
+*.lnk
+*.ico
+
+# Development tools
+.devcontainer/
+
+"your-private-file.json" 
