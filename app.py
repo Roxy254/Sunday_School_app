@@ -302,10 +302,6 @@ elif page == "📊 Reports":
                     # Show present children with their details
                     st.markdown("**Present Children Details:**")
 
-                    # Debug information
-                    st.write("Debug - present_df columns before merge:", present_df.columns.tolist())
-                    st.write("Debug - present_children columns:", present_children[['id', 'full_name']].columns.tolist())
-
                     # Merge the DataFrames
                     present_df = present_df.merge(
                         present_children[['id', 'full_name']],
@@ -314,11 +310,9 @@ elif page == "📊 Reports":
                         suffixes=('_attendance', '_child')
                     )
 
-                    st.write("Debug - present_df columns after merge:", present_df.columns.tolist())
-
                     # Create display DataFrame with only the columns that exist
                     display_columns = {
-                        'full_name': 'Name',
+                        'full_name_child': 'Name',
                         'early': 'Early',
                         'has_book': 'Book',
                         'has_pen': 'Pen',
@@ -326,14 +320,14 @@ elif page == "📊 Reports":
                         'gave_offering': 'Offering'
                     }
 
-                    # Get available columns (using exact column names from debug output)
+                    # Get available columns
                     available_columns = [col for col in display_columns.keys() if col in present_df.columns]
 
                     # Create display DataFrame
                     if available_columns:
                         display_df = present_df[available_columns].copy()
                         display_df.columns = [display_columns[col] for col in available_columns]
-                        st.dataframe(display_df)
+                        st.dataframe(display_df, use_container_width=True)
                     else:
                         st.warning("No display columns available in the data")
                 
