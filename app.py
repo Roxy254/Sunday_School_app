@@ -301,23 +301,41 @@ elif page == "📊 Reports":
                     
                     # Show present children with their details
                     st.markdown("**Present Children Details:**")
+
                     # Debug information
-                    st.write("Debug - present_df columns:", present_df.columns.tolist())
+                    st.write("Debug - present_df columns before merge:", present_df.columns.tolist())
                     st.write("Debug - present_children columns:", present_children[['id', 'full_name']].columns.tolist())
 
-                    # Ensure we have the right columns before merging
-                    present_df = present_df.rename(columns={'id': 'attendance_id'})  # Rename the id column to avoid conflicts
+                    # Merge the DataFrames
                     present_df = present_df.merge(
                         present_children[['id', 'full_name']],
                         left_on='child_id',
                         right_on='id',
-                        how='left'
+                        suffixes=('_attendance', '_child')
                     )
 
-                    # Create display DataFrame with only the columns that exist in the database
-                    display_df = present_df[['full_name', 'early', 'has_book', 'has_pen', 'has_bible', 'gave_offering']]
-                    display_df.columns = ['Name', 'Early', 'Book', 'Pen', 'Bible', 'Offering']
-                    st.dataframe(display_df)
+                    st.write("Debug - present_df columns after merge:", present_df.columns.tolist())
+
+                    # Create display DataFrame with only the columns that exist
+                    display_columns = {
+                        'full_name': 'Name',
+                        'early': 'Early',
+                        'has_book': 'Book',
+                        'has_pen': 'Pen',
+                        'has_bible': 'Bible',
+                        'gave_offering': 'Offering'
+                    }
+
+                    # Get available columns (using exact column names from debug output)
+                    available_columns = [col for col in display_columns.keys() if col in present_df.columns]
+
+                    # Create display DataFrame
+                    if available_columns:
+                        display_df = present_df[available_columns].copy()
+                        display_df.columns = [display_columns[col] for col in available_columns]
+                        st.dataframe(display_df)
+                    else:
+                        st.warning("No display columns available in the data")
                 
                 # Show absent children in this class
                 if class_absent > 0:
