@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 from datetime import datetime, date
 from database import (
     load_children,
@@ -130,13 +131,13 @@ if page == "📋 Registration":
             st.error(f"Error saving record: {str(e)}")
 
 elif page == "🗓️ Attendance":
-    st.title("🗓️ Mark Attendance")
+    st.title("🗓️ Sunday Attendance")
     
     if not children_df.empty:
-        session_date = st.date_input("Session Date", date.today())
+        session_date = st.date_input("Sunday Date", date.today())
         
         with st.form("attendance_form"):
-            st.write("Mark attendance for each child:")
+            st.write("Mark Sunday attendance for each child:")
             
             # Create columns for the header
             col1, col2, col3, col4, col5, col6, col7 = st.columns([3, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5])
@@ -202,16 +203,16 @@ elif page == "🗓️ Attendance":
         st.warning("No children registered yet!")
 
 elif page == "📊 Reports":
-    st.title("📊 Attendance Reports")
+    st.title("📊 Sunday Attendance Reports")
     
     if not attendance_df.empty and not children_df.empty:
         report_type = st.selectbox(
             "Select Report Type",
-            ["Daily Attendance", "Weekly Summary", "Monthly Summary"]
+            ["Sunday Attendance", "Weekly Summary", "Monthly Summary"]
         )
         
-        if report_type == "Daily Attendance":
-            selected_date = st.date_input("Select Date", date.today())
+        if report_type == "Sunday Attendance":
+            selected_date = st.date_input("Select Sunday Date", date.today())
             
             # Filter attendance for selected date
             daily_attendance = attendance_df[attendance_df['session_date'] == selected_date.isoformat()]
@@ -513,11 +514,13 @@ elif page == "📊 Reports":
                                 class_children[['id', 'full_name']],
                                 left_on='child_id',
                                 right_on='id',
-                                suffixes=('_attendance', '_child')
+                                suffixes=('_attendance', '')
                             )
                             
                             # Calculate attendance count per child
-                            attendance_counts = detailed_attendance.groupby('full_name').size().reset_index()
+                            attendance_counts = detailed_attendance.groupby('full_name').agg({
+                                'session_date': 'count'
+                            }).reset_index()
                             attendance_counts.columns = ['Name', 'Sessions Attended']
                             attendance_counts['Attendance Rate'] = (attendance_counts['Sessions Attended'] / total_sessions * 100).round(1)
                             
@@ -626,30 +629,53 @@ elif page == "👤 Profile":
                 # Get the child's class group
                 class_group = child_info['class_group']
                 
-                # Get the child's first attendance date
-                first_attendance_date = pd.to_datetime(child_attendance['session_date']).min()
+                # Define the start date for attendance tracking (March 1, 2025)
+                start_date = pd.Timestamp('2025-03-01')
                 
-                # Get all class sessions since the child's first attendance
+                # Check if child has any attendance in March or April 2025
+                march_april_attendance = attendance_df[
+                    (attendance_df['child_id'] == child_info['id']) &
+                    (pd.to_datetime(attendance_df['session_date']).dt.year == 2025) &
+                    (pd.to_datetime(attendance_df['session_date']).dt.month.isin([3, 4]))
+                ]
+                
+                is_new_child = march_april_attendance.empty
+                
+                if is_new_child:
+                    # For new children, use their first attendance date
+                    first_attendance_date = pd.to_datetime(child_attendance['session_date']).min()
+                    st.info(f"📝 New child! First attendance: {first_attendance_date.strftime('%Y-%m-%d')}")
+                else:
+                    # For existing children, use March 1, 2025
+                    first_attendance_date = start_date
+                    st.info("👥 Existing child - Attendance tracked from March 2025")
+                
+                # Get all class sessions since the tracking start date
                 class_sessions = attendance_df[
-                    (pd.to_datetime(attendance_df['session_date']) >= first_attendance_date)
+                    pd.to_datetime(attendance_df['session_date']) >= first_attendance_date
                 ]['session_date'].unique()
                 total_available_sessions = len(class_sessions)
                 
+                # Get child's attendance records since tracking start date
+                tracked_attendance = child_attendance[
+                    pd.to_datetime(child_attendance['session_date']) >= first_attendance_date
+                ]
+                
                 # Calculate attendance statistics
-                present_count = len(child_attendance)
+                present_count = len(tracked_attendance)
                 absent_count = total_available_sessions - present_count
                 attendance_rate = (present_count / total_available_sessions * 100) if total_available_sessions > 0 else 0
                 
-                # Calculate participation rates
-                early_rate = (child_attendance['early'].sum() / present_count * 100) if present_count > 0 else 0
-                book_rate = (child_attendance['has_book'].sum() / present_count * 100) if present_count > 0 else 0
-                pen_rate = (child_attendance['has_pen'].sum() / present_count * 100) if present_count > 0 else 0
-                bible_rate = (child_attendance['has_bible'].sum() / present_count * 100) if present_count > 0 else 0
-                offering_rate = (child_attendance['gave_offering'].sum() / present_count * 100) if present_count > 0 else 0
+                # Calculate participation rates based on attended sessions
+                early_rate = (tracked_attendance['early'].sum() / present_count * 100) if present_count > 0 else 0
+                book_rate = (tracked_attendance['has_book'].sum() / present_count * 100) if present_count > 0 else 0
+                pen_rate = (tracked_attendance['has_pen'].sum() / present_count * 100) if present_count > 0 else 0
+                bible_rate = (tracked_attendance['has_bible'].sum() / present_count * 100) if present_count > 0 else 0
+                offering_rate = (tracked_attendance['gave_offering'].sum() / present_count * 100) if present_count > 0 else 0
                 
                 # Display attendance summary
                 st.markdown("#### 📊 Attendance Summary")
-                st.markdown(f"**First Attendance:** {first_attendance_date.strftime('%Y-%m-%d')}")
+                st.markdown(f"**Tracking Start Date:** {first_attendance_date.strftime('%Y-%m-%d')}")
                 st.markdown(f"**Total Available Sessions:** {total_available_sessions}")
                 
                 # Display metrics in two rows
@@ -676,14 +702,14 @@ elif page == "👤 Profile":
                 # Show detailed attendance records
                 st.markdown("#### 📅 Detailed Attendance Records")
                 
-                # Create a DataFrame with all sessions
+                # Create a DataFrame with all sessions since tracking start
                 all_sessions_df = pd.DataFrame({
                     'session_date': class_sessions
                 })
                 
                 # Merge with actual attendance to get present/absent status
                 detailed_attendance = all_sessions_df.merge(
-                    child_attendance[['session_date', 'early', 'has_book', 'has_pen', 'has_bible', 'gave_offering']],
+                    tracked_attendance[['session_date', 'early', 'has_book', 'has_pen', 'has_bible', 'gave_offering']],
                     on='session_date',
                     how='left'
                 )
@@ -692,9 +718,10 @@ elif page == "👤 Profile":
                 detailed_attendance = detailed_attendance.fillna(False)
                 
                 # Add status column
-                detailed_attendance['Status'] = detailed_attendance.apply(
-                    lambda x: 'Present' if not pd.isna(x['early']) else 'Absent',
-                    axis=1
+                detailed_attendance['Status'] = np.where(
+                    pd.isna(detailed_attendance['early']),
+                    'Absent',
+                    'Present'
                 )
                 
                 # Format for display
@@ -705,6 +732,9 @@ elif page == "👤 Profile":
                 display_df['Pen'] = display_df['has_pen'].map({True: '✅', False: '❌'})
                 display_df['Bible'] = display_df['has_bible'].map({True: '✅', False: '❌'})
                 display_df['Offering'] = display_df['gave_offering'].map({True: '✅', False: '❌'})
+                
+                # Sort by date in descending order
+                display_df = display_df.sort_values('session_date', ascending=False)
                 
                 # Display the records
                 st.dataframe(
@@ -742,11 +772,12 @@ elif page == "👤 Profile":
                 # Compare with class averages
                 st.markdown("#### 🔄 Comparison with Class Averages")
                 
-                # Get class attendance data
+                # Get class attendance data since tracking start date
                 class_attendance = attendance_df[
-                    attendance_df['child_id'].isin(
+                    (attendance_df['child_id'].isin(
                         children_df[children_df['class_group'] == class_group]['id']
-                    )
+                    )) &
+                    (pd.to_datetime(attendance_df['session_date']) >= first_attendance_date)
                 ]
                 
                 if not class_attendance.empty:
@@ -757,7 +788,6 @@ elif page == "👤 Profile":
                     class_book_rate = (class_attendance['has_book'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
                     class_pen_rate = (class_attendance['has_pen'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
                     class_bible_rate = (class_attendance['has_bible'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
-                    class_offering_rate = (class_attendance['gave_offering'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
                     
                     # Display comparison
                     col1, col2, col3 = st.columns(3)
