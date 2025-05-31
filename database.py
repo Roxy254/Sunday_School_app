@@ -36,14 +36,14 @@ def load_attendance():
         if not supabase:
             return pd.DataFrame()
         
-        # Get attendance data
+        # Get attendance data with all fields
         attendance_response = supabase.table('attendance').select("*").execute()
         attendance_df = pd.DataFrame(attendance_response.data) if attendance_response.data else pd.DataFrame()
         
         if attendance_df.empty:
             return attendance_df
             
-        # Get children data
+        # Get children data with id and full_name
         children_response = supabase.table('children').select("id", "full_name").execute()
         children_df = pd.DataFrame(children_response.data) if children_response.data else pd.DataFrame()
         
@@ -55,6 +55,18 @@ def load_attendance():
                 right_on="id",
                 how="left"
             )
+            
+            # Ensure all required columns exist with correct names
+            required_columns = [
+                'child_id', 'session_date', 'present', 'early',
+                'has_book', 'has_pen', 'has_bible', 'gave_offering',
+                'full_name', 'id'
+            ]
+            
+            # Add any missing columns with default values
+            for col in required_columns:
+                if col not in attendance_df.columns:
+                    attendance_df[col] = False if col in ['present', 'early', 'has_book', 'has_pen', 'has_bible', 'gave_offering'] else None
         
         return attendance_df
     except Exception as e:

@@ -392,28 +392,57 @@ elif page == "👤 Profile":
         
         # Show attendance records
         st.subheader("📅 Attendance Records")
-        child_attendance = attendance_df[attendance_df["child_id"] == child_info["id"]]
         
-        if not child_attendance.empty:
-            st.dataframe(child_attendance)
+        try:
+            # Ensure child_info has the required id field
+            if 'id' not in child_info:
+                st.error("Error: Child record is missing ID field")
+                return
+                
+            # Get attendance records for this child
+            child_attendance = attendance_df[attendance_df['child_id'] == child_info['id']]
             
-            # Calculate statistics
-            total_sessions = len(child_attendance)
-            present_count = (child_attendance["present"] == True).sum()
-            bible_count = (child_attendance["has_bible"] == True).sum()
-            offering_count = (child_attendance["gave_offering"] == True).sum()
-            
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Total Sessions", total_sessions)
-            with col2:
-                st.metric("Attendance Rate", f"{(present_count/total_sessions*100):.1f}%")
-            with col3:
-                st.metric("Bible Rate", f"{(bible_count/total_sessions*100):.1f}%")
-            with col4:
-                st.metric("Offering Rate", f"{(offering_count/total_sessions*100):.1f}%")
-        else:
-            st.info("No attendance records found for this child")
+            if not child_attendance.empty:
+                # Create a display-friendly version of the attendance data
+                display_columns = ['session_date', 'present', 'early', 'has_book', 'has_pen', 'has_bible', 'gave_offering']
+                display_attendance = child_attendance[display_columns].copy()
+                display_attendance.columns = ['Date', 'Present', 'Early', 'Book', 'Pen', 'Bible', 'Offering']
+                
+                # Sort by date in descending order
+                display_attendance = display_attendance.sort_values('Date', ascending=False)
+                st.dataframe(display_attendance)
+                
+                # Calculate statistics
+                total_sessions = len(child_attendance)
+                present_count = child_attendance['present'].sum() if 'present' in child_attendance else 0
+                early_count = child_attendance['early'].sum() if 'early' in child_attendance else 0
+                book_count = child_attendance['has_book'].sum() if 'has_book' in child_attendance else 0
+                pen_count = child_attendance['has_pen'].sum() if 'has_pen' in child_attendance else 0
+                bible_count = child_attendance['has_bible'].sum() if 'has_bible' in child_attendance else 0
+                offering_count = child_attendance['gave_offering'].sum() if 'gave_offering' in child_attendance else 0
+                
+                # Display metrics in two rows
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Sessions", total_sessions)
+                with col2:
+                    st.metric("Attendance Rate", f"{(present_count/total_sessions*100):.1f}%" if total_sessions > 0 else "0%")
+                with col3:
+                    st.metric("Early Rate", f"{(early_count/total_sessions*100):.1f}%" if total_sessions > 0 else "0%")
+                with col4:
+                    st.metric("Book Rate", f"{(book_count/total_sessions*100):.1f}%" if total_sessions > 0 else "0%")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Pen Rate", f"{(pen_count/total_sessions*100):.1f}%" if total_sessions > 0 else "0%")
+                with col2:
+                    st.metric("Bible Rate", f"{(bible_count/total_sessions*100):.1f}%" if total_sessions > 0 else "0%")
+                with col3:
+                    st.metric("Offering Rate", f"{(offering_count/total_sessions*100):.1f}%" if total_sessions > 0 else "0%")
+            else:
+                st.info("No attendance records found for this child")
+        except Exception as e:
+            st.error(f"Error displaying attendance records: {str(e)}")
     else:
         st.warning("No children registered yet!")
 
