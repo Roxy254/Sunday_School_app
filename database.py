@@ -11,6 +11,9 @@ def get_supabase_client():
         url = st.secrets["supabase"]["url"]
         key = st.secrets["supabase"]["key"]
         
+        # Debug output
+        st.write("Debug - Supabase URL:", url)
+        
         # Validate URL format
         if not url.startswith("https://") or not url.endswith(".supabase.co"):
             st.error(f"Invalid Supabase URL format: {url}")
@@ -22,10 +25,12 @@ def get_supabase_client():
         # Test connection
         try:
             # Try a simple query to test connection
-            client.table('children').select("count", count='exact').execute()
+            response = client.table('children').select("count", count='exact').execute()
+            st.success("Successfully connected to Supabase!")
             return client
         except Exception as e:
             st.error(f"Failed to connect to Supabase: {str(e)}")
+            st.error("Response details:", str(e.__dict__))
             return None
             
     except KeyError as e:
@@ -33,6 +38,7 @@ def get_supabase_client():
         return None
     except Exception as e:
         st.error(f"Error connecting to Supabase: {str(e)}")
+        st.error("Error details:", str(e.__dict__))
         return None
 
 @st.cache_data(ttl=30)
