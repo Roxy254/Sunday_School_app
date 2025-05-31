@@ -397,7 +397,7 @@ elif page == "👤 Profile":
             # Ensure child_info has the required id field
             if 'id' not in child_info:
                 st.error("Error: Child record is missing ID field")
-                return
+                st.stop()
                 
             # Get attendance records for this child
             child_attendance = attendance_df[attendance_df['child_id'] == child_info['id']]
