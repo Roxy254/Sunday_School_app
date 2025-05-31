@@ -517,15 +517,52 @@ elif page == "📊 Reports":
                                 suffixes=('_attendance', '')
                             )
                             
-                            # Calculate attendance count per child
-                            attendance_counts = detailed_attendance.groupby('full_name').agg({
-                                'session_date': 'count'
-                            }).reset_index()
-                            attendance_counts.columns = ['Name', 'Sessions Attended']
-                            attendance_counts['Attendance Rate'] = (attendance_counts['Sessions Attended'] / total_sessions * 100).round(1)
+                            # Calculate attendance count and rate per child
+                            attendance_stats = []
+                            for _, child in class_children.iterrows():
+                                child_id = child['id']
+                                child_name = child['full_name']
+                                
+                                # Check if child is new (no attendance in March/April 2025)
+                                march_april_attendance = attendance_df[
+                                    (attendance_df['child_id'] == child_id) &
+                                    (pd.to_datetime(attendance_df['session_date']).dt.year == 2025) &
+                                    (pd.to_datetime(attendance_df['session_date']).dt.month.isin([3, 4]))
+                                ]
+                                
+                                is_new_child = march_april_attendance.empty
+                                
+                                # Get child's attendance records
+                                child_attendance = detailed_attendance[detailed_attendance['child_id'] == child_id]
+                                
+                                if not child_attendance.empty:
+                                    if is_new_child:
+                                        # For new children, use their first attendance date
+                                        first_attendance = pd.to_datetime(child_attendance['session_date']).min()
+                                        available_sessions = len(pd.date_range(first_attendance, pd.Timestamp.now(), freq='W-SUN'))
+                                    else:
+                                        # For existing children, count from March 2025
+                                        first_attendance = pd.Timestamp('2025-03-01')
+                                        available_sessions = total_sessions
+                                    
+                                    sessions_attended = len(child_attendance[
+                                        pd.to_datetime(child_attendance['session_date']) >= first_attendance
+                                    ])
+                                    
+                                    attendance_rate = (sessions_attended / available_sessions * 100) if available_sessions > 0 else 0
+                                    
+                                    attendance_stats.append({
+                                        'Name': child_name,
+                                        'First Attendance': first_attendance.strftime('%Y-%m-%d'),
+                                        'Available Sessions': available_sessions,
+                                        'Sessions Attended': sessions_attended,
+                                        'Attendance Rate': round(attendance_rate, 1)
+                                    })
                             
-                            # Display the detailed attendance
-                            st.dataframe(attendance_counts, use_container_width=True)
+                            if attendance_stats:
+                                # Convert to DataFrame and display
+                                attendance_df = pd.DataFrame(attendance_stats)
+                                st.dataframe(attendance_df, use_container_width=True)
                 
                 # OCM Children Monthly Statistics
                 st.markdown("#### 👥 OCM Children Monthly Statistics")
