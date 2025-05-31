@@ -7,9 +7,30 @@ from datetime import datetime
 def get_supabase_client():
     """Initialize and return Supabase client"""
     try:
+        # Get credentials from secrets
         url = st.secrets["supabase"]["url"]
         key = st.secrets["supabase"]["key"]
-        return create_client(url, key)
+        
+        # Validate URL format
+        if not url.startswith("https://") or not url.endswith(".supabase.co"):
+            st.error(f"Invalid Supabase URL format: {url}")
+            return None
+            
+        # Create client with validated credentials
+        client = create_client(url, key)
+        
+        # Test connection
+        try:
+            # Try a simple query to test connection
+            client.table('children').select("count", count='exact').execute()
+            return client
+        except Exception as e:
+            st.error(f"Failed to connect to Supabase: {str(e)}")
+            return None
+            
+    except KeyError as e:
+        st.error(f"Missing Supabase configuration: {str(e)}")
+        return None
     except Exception as e:
         st.error(f"Error connecting to Supabase: {str(e)}")
         return None
