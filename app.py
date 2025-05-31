@@ -139,14 +139,20 @@ elif page == "🗓️ Attendance":
             st.write("Mark attendance for each child:")
             
             # Create columns for the header
-            col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+            col1, col2, col3, col4, col5, col6, col7 = st.columns([3, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5])
             with col1:
                 st.write("**Name**")
             with col2:
                 st.write("**Present**")
             with col3:
-                st.write("**Bible**")
+                st.write("**Early**")
             with col4:
+                st.write("**Book**")
+            with col5:
+                st.write("**Pen**")
+            with col6:
+                st.write("**Bible**")
+            with col7:
                 st.write("**Offering**")
             
             attendance_records = []
@@ -154,14 +160,20 @@ elif page == "🗓️ Attendance":
             # Create a container for scrollable content
             with st.container():
                 for _, child in children_df.iterrows():
-                    col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                    col1, col2, col3, col4, col5, col6, col7 = st.columns([3, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5])
                     with col1:
                         st.write(child["full_name"])
                     with col2:
                         present = st.checkbox("Present", key=f"present_{child['id']}")
                     with col3:
-                        bible = st.checkbox("Bible", key=f"bible_{child['id']}")
+                        early = st.checkbox("Early", key=f"early_{child['id']}")
                     with col4:
+                        book = st.checkbox("Book", key=f"book_{child['id']}")
+                    with col5:
+                        pen = st.checkbox("Pen", key=f"pen_{child['id']}")
+                    with col6:
+                        bible = st.checkbox("Bible", key=f"bible_{child['id']}")
+                    with col7:
                         offering = st.checkbox("Offering", key=f"offering_{child['id']}")
                     
                     if present:
@@ -169,6 +181,9 @@ elif page == "🗓️ Attendance":
                             "child_id": child["id"],
                             "session_date": session_date.isoformat(),
                             "present": present,
+                            "early": early,
+                            "has_book": book,
+                            "has_pen": pen,
                             "has_bible": bible,
                             "gave_offering": offering
                         })
@@ -179,7 +194,7 @@ elif page == "🗓️ Attendance":
                 try:
                     for record in attendance_records:
                         save_attendance(record)
-                        st.success("✅ Attendance saved successfully!")
+                    st.success("✅ Attendance saved successfully!")
                     load_attendance.clear()
                 except Exception as e:
                     st.error(f"Error saving attendance: {str(e)}")
@@ -189,7 +204,7 @@ elif page == "🗓️ Attendance":
 elif page == "📊 Reports":
     st.title("📊 Attendance Reports")
     
-    if not attendance_df.empty:
+    if not attendance_df.empty and not children_df.empty:
         report_type = st.selectbox(
             "Select Report Type",
             ["Daily Attendance", "Weekly Summary", "Monthly Summary"]
@@ -199,34 +214,161 @@ elif page == "📊 Reports":
             selected_date = st.date_input("Select Date", date.today())
             
             # Filter attendance for selected date
-            daily_attendance = attendance_df[attendance_df["session_date"] == selected_date.isoformat()]
+            daily_attendance = attendance_df[attendance_df['session_date'] == selected_date.isoformat()]
+            
+            # Get all children for the day
+            all_children = children_df.copy()
+            
+            # Mark present/absent
+            present_ids = daily_attendance['child_id'].unique()
+            all_children['status'] = all_children['id'].apply(lambda x: 'Present' if x in present_ids else 'Absent')
+            
+            # Overall Statistics
+            total_children = len(all_children)
+            total_present = len(present_ids)
+            total_absent = total_children - total_present
+            
+            # Display overall statistics
+            st.markdown("### 📈 Overall Attendance")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Children", total_children)
+            with col2:
+                st.metric("Present", total_present)
+            with col3:
+                st.metric("Absent", total_absent)
             
             if not daily_attendance.empty:
-                # Join with children data to show names
-                daily_attendance = daily_attendance.merge(
-                    children_df[["id", "full_name"]],
-                    left_on="child_id",
-                    right_on="id",
-                    how="left"
-                )
-                st.dataframe(daily_attendance)
+                st.markdown("### 📚 Overall Participation")
+                total_early = daily_attendance['early'].sum()
+                total_books = daily_attendance['has_book'].sum()
+                total_pens = daily_attendance['has_pen'].sum()
+                total_bibles = daily_attendance['has_bible'].sum()
+                total_offerings = daily_attendance['gave_offering'].sum()
                 
-                # Show statistics
-                total_present = daily_attendance["present"].sum()
-                total_bible = daily_attendance["has_bible"].sum()
-                total_offering = daily_attendance["gave_offering"].sum()
+                col1, col2, col3, col4, col5 = st.columns(5)
+                with col1:
+                    st.metric("Early Arrival", f"{total_early} ({(total_early/total_present*100):.1f}%)")
+                with col2:
+                    st.metric("With Books", f"{total_books} ({(total_books/total_present*100):.1f}%)")
+                with col3:
+                    st.metric("With Pens", f"{total_pens} ({(total_pens/total_present*100):.1f}%)")
+                with col4:
+                    st.metric("With Bibles", f"{total_bibles} ({(total_bibles/total_present*100):.1f}%)")
+                with col5:
+                    st.metric("With Offering", f"{total_offerings} ({(total_offerings/total_present*100):.1f}%)")
+            
+            # Class-wise Statistics
+            st.markdown("### 📊 Class-wise Attendance")
+            for class_name in all_children['class_group'].unique():
+                st.markdown(f"#### {class_name}")
+                class_children = all_children[all_children['class_group'] == class_name]
+                class_present = len(class_children[class_children['status'] == 'Present'])
+                class_absent = len(class_children[class_children['status'] == 'Absent'])
+                
+                # Basic attendance metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total", len(class_children))
+                with col2:
+                    st.metric("Present", class_present)
+                with col3:
+                    st.metric("Absent", class_absent)
+                
+                # Detailed participation metrics for this class
+                if class_present > 0:
+                    present_children = class_children[class_children['status'] == 'Present']
+                    present_df = daily_attendance[daily_attendance['child_id'].isin(present_children['id'])]
+                    
+                    class_early = present_df['early'].sum()
+                    class_books = present_df['has_book'].sum()
+                    class_pens = present_df['has_pen'].sum()
+                    class_bibles = present_df['has_bible'].sum()
+                    class_offerings = present_df['gave_offering'].sum()
+                    
+                    st.markdown("**Class Participation:**")
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    with col1:
+                        st.metric("Early", f"{class_early} ({(class_early/class_present*100):.1f}%)")
+                    with col2:
+                        st.metric("Books", f"{class_books} ({(class_books/class_present*100):.1f}%)")
+                    with col3:
+                        st.metric("Pens", f"{class_pens} ({(class_pens/class_present*100):.1f}%)")
+                    with col4:
+                        st.metric("Bibles", f"{class_bibles} ({(class_bibles/class_present*100):.1f}%)")
+                    with col5:
+                        st.metric("Offering", f"{class_offerings} ({(class_offerings/class_present*100):.1f}%)")
+                    
+                    # Show present children with their details
+                    st.markdown("**Present Children Details:**")
+                    present_df = present_df.merge(present_children[['id', 'full_name']], left_on='child_id', right_on='id')
+                    display_df = present_df[['full_name', 'early', 'has_book', 'has_pen', 'has_bible', 'gave_offering']]
+                    display_df.columns = ['Name', 'Early', 'Book', 'Pen', 'Bible', 'Offering']
+                    st.dataframe(display_df)
+                
+                # Show absent children in this class
+                if class_absent > 0:
+                    absent_children = class_children[class_children['status'] == 'Absent']
+                    st.markdown("**Absent Children:**")
+                    st.dataframe(absent_children[['full_name']])
+                
+                st.markdown("---")  # Add a separator between classes
+            
+            # OCM Children Statistics
+            st.markdown("### 👥 OCM Children Attendance")
+            ocm_children = all_children[all_children['sponsored'] == True]
+            if not ocm_children.empty:
+                ocm_present = len(ocm_children[ocm_children['status'] == 'Present'])
+                ocm_absent = len(ocm_children[ocm_children['status'] == 'Absent'])
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Total Present", total_present)
+                    st.metric("Total OCM Children", len(ocm_children))
                 with col2:
-                    st.metric("Brought Bible", total_bible)
+                    st.metric("Present", ocm_present)
                 with col3:
-                    st.metric("Brought Offering", total_offering)
-            else:
-                st.info("No attendance records for selected date")
+                    st.metric("Absent", ocm_absent)
+                
+                if ocm_present > 0:
+                    # Get participation stats for OCM children
+                    present_ocm = ocm_children[ocm_children['status'] == 'Present']
+                    ocm_attendance = daily_attendance[daily_attendance['child_id'].isin(present_ocm['id'])]
+                    
+                    ocm_early = ocm_attendance['early'].sum()
+                    ocm_books = ocm_attendance['has_book'].sum()
+                    ocm_pens = ocm_attendance['has_pen'].sum()
+                    ocm_bibles = ocm_attendance['has_bible'].sum()
+                    ocm_offerings = ocm_attendance['gave_offering'].sum()
+                    
+                    st.markdown("**OCM Children Participation:**")
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    with col1:
+                        st.metric("Early", f"{ocm_early} ({(ocm_early/ocm_present*100):.1f}%)")
+                    with col2:
+                        st.metric("Books", f"{ocm_books} ({(ocm_books/ocm_present*100):.1f}%)")
+                    with col3:
+                        st.metric("Pens", f"{ocm_pens} ({(ocm_pens/ocm_present*100):.1f}%)")
+                    with col4:
+                        st.metric("Bibles", f"{ocm_bibles} ({(ocm_bibles/ocm_present*100):.1f}%)")
+                    with col5:
+                        st.metric("Offering", f"{ocm_offerings} ({(ocm_offerings/ocm_present*100):.1f}%)")
+                    
+                    # Show present OCM children with their details
+                    st.markdown("**Present OCM Children Details:**")
+                    present_ocm_df = ocm_attendance.merge(present_ocm[['id', 'full_name', 'class_group']], 
+                                                        left_on='child_id', right_on='id')
+                    display_df = present_ocm_df[['full_name', 'class_group', 'early', 'has_book', 
+                                               'has_pen', 'has_bible', 'gave_offering']]
+                    display_df.columns = ['Name', 'Class', 'Early', 'Book', 'Pen', 'Bible', 'Offering']
+                    st.dataframe(display_df)
+                
+                # Show absent OCM children
+                if ocm_absent > 0:
+                    st.markdown("**Absent OCM Children:**")
+                    absent_ocm = ocm_children[ocm_children['status'] == 'Absent']
+                    st.dataframe(absent_ocm[['full_name', 'class_group']])
     else:
-        st.info("No attendance records found")
+        st.warning("No attendance data available yet!")
 
 elif page == "👤 Profile":
     st.title("👤 Child Profile")

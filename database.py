@@ -94,7 +94,31 @@ def save_attendance(attendance_data):
         if not supabase:
             return False
         
-        response = supabase.table('attendance').insert(attendance_data).execute()
+        # Check if attendance record already exists for this child and date
+        existing = supabase.table('attendance').select("*").eq(
+            'child_id', attendance_data['child_id']
+        ).eq(
+            'session_date', attendance_data['session_date']
+        ).execute()
+        
+        if existing.data:
+            # Update existing record
+            response = supabase.table('attendance').update({
+                'present': attendance_data['present'],
+                'early': attendance_data.get('early', False),
+                'has_book': attendance_data.get('has_book', False),
+                'has_pen': attendance_data.get('has_pen', False),
+                'has_bible': attendance_data.get('has_bible', False),
+                'gave_offering': attendance_data.get('gave_offering', False)
+            }).eq(
+                'child_id', attendance_data['child_id']
+            ).eq(
+                'session_date', attendance_data['session_date']
+            ).execute()
+        else:
+            # Insert new record
+            response = supabase.table('attendance').insert(attendance_data).execute()
+        
         return True if response.data else False
     except Exception as e:
         st.error(f"Error saving attendance data: {str(e)}")
