@@ -1001,7 +1001,7 @@ elif page == "✏️ Edit Profiles":
                     }
                     
                         # Update using Supabase
-                        supabase = get_supabase_client()
+                 supabase = get_supabase_client()
                         if not supabase:
                             st.error("Could not connect to database")
                             st.stop()
