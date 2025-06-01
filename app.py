@@ -978,7 +978,7 @@ elif page == "✏️ Edit Profiles":
             contact1 = st.text_input("Contact 1", value=child_info["parent1_contact"])
             parent2 = st.text_input("Parent/Guardian 2", value=child_info["parent2_name"])
             contact2 = st.text_input("Contact 2", value=child_info["parent2_contact"])
-                sponsored = st.checkbox("Sponsored by OCM", value=child_info["sponsored"])
+            sponsored = st.checkbox("Sponsored by OCM", value=child_info["sponsored"])
             
             submitted = st.form_submit_button("💾 Save Changes")
             
