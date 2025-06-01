@@ -134,22 +134,12 @@ elif page == "🗓️ Attendance":
     st.title("🗓️ Sunday Attendance")
     
     if not children_df.empty:
-        # Extract unique class groups from the children data
-        unique_classes = sorted(children_df['class_group'].dropna().unique())
-        selected_class = st.selectbox("Filter by Class Group", ["All Classes"] + unique_classes)
-
-        # Filter the dataframe based on selected class group
-        if selected_class != "All Classes":
-            filtered_children = children_df[children_df['class_group'] == selected_class]
-        else:
-            filtered_children = children_df
-
         session_date = st.date_input("Sunday Date", date.today())
         
         with st.form("attendance_form"):
             st.write("Mark Sunday attendance for each child:")
             
-            # Header
+            # Create columns for the header
             col1, col2, col3, col4, col5, col6, col7 = st.columns([3, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5])
             with col1:
                 st.write("**Name**")
@@ -168,8 +158,9 @@ elif page == "🗓️ Attendance":
             
             attendance_records = []
             
+            # Create a container for scrollable content
             with st.container():
-                for _, child in filtered_children.iterrows():
+                for _, child in children_df.iterrows():
                     col1, col2, col3, col4, col5, col6, col7 = st.columns([3, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5])
                     with col1:
                         st.write(child["full_name"])
@@ -978,7 +969,7 @@ elif page == "✏️ Edit Profiles":
             contact1 = st.text_input("Contact 1", value=child_info["parent1_contact"])
             parent2 = st.text_input("Parent/Guardian 2", value=child_info["parent2_name"])
             contact2 = st.text_input("Contact 2", value=child_info["parent2_contact"])
-            sponsored = st.checkbox("Sponsored by OCM", value=child_info["sponsored"])
+                sponsored = st.checkbox("Sponsored by OCM", value=child_info["sponsored"])
             
             submitted = st.form_submit_button("💾 Save Changes")
             
@@ -1001,7 +992,7 @@ elif page == "✏️ Edit Profiles":
                     }
                     
                         # Update using Supabase
-                    supabase = get_supabase_client()
+                        supabase = get_supabase_client()
                         if not supabase:
                             st.error("Could not connect to database")
                             st.stop()
