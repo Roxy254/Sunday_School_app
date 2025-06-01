@@ -134,12 +134,22 @@ elif page == "🗓️ Attendance":
     st.title("🗓️ Sunday Attendance")
     
     if not children_df.empty:
+        # Extract unique class groups from the children data
+        unique_classes = sorted(children_df['class_group'].dropna().unique())
+        selected_class = st.selectbox("Filter by Class Group", ["All Classes"] + unique_classes)
+
+        # Filter the dataframe based on selected class group
+        if selected_class != "All Classes":
+            filtered_children = children_df[children_df['class_group'] == selected_class]
+        else:
+            filtered_children = children_df
+
         session_date = st.date_input("Sunday Date", date.today())
         
         with st.form("attendance_form"):
             st.write("Mark Sunday attendance for each child:")
             
-            # Create columns for the header
+            # Header
             col1, col2, col3, col4, col5, col6, col7 = st.columns([3, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5])
             with col1:
                 st.write("**Name**")
@@ -158,9 +168,8 @@ elif page == "🗓️ Attendance":
             
             attendance_records = []
             
-            # Create a container for scrollable content
             with st.container():
-                for _, child in children_df.iterrows():
+                for _, child in filtered_children.iterrows():
                     col1, col2, col3, col4, col5, col6, col7 = st.columns([3, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5])
                     with col1:
                         st.write(child["full_name"])
@@ -653,218 +662,218 @@ elif page == "👤 Profile":
         if not filtered_df.empty:
             selected_child = st.selectbox("Select a Child", sorted(filtered_df["full_name"].tolist()))
             child_info = filtered_df[filtered_df["full_name"] == selected_child].iloc[0]
+        
+        st.subheader("📋 Personal Info")
+        
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.info("📷 No profile photo available")
+        
+        with col2:
+            for column in children_df.columns:
+                if column != "full_name":
+                    st.write(f"**{column}:** {child_info[column]}")
+        
+        # Show attendance records
+        st.subheader("📅 Attendance Records")
+        
+        try:
+            # Ensure child_info has the required id field
+            if 'id' not in child_info:
+                st.error("Error: Child record is missing ID field")
+                st.stop()
             
-            st.subheader("📋 Personal Info")
+            # Get all attendance records for this child
+            child_attendance = attendance_df[attendance_df['child_id'] == child_info['id']]
             
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                st.info("📷 No profile photo available")
-            
-            with col2:
-                for column in children_df.columns:
-                    if column != "full_name":
-                        st.write(f"**{column}:** {child_info[column]}")
-            
-            # Show attendance records
-            st.subheader("📅 Attendance Records")
-            
-            try:
-                # Ensure child_info has the required id field
-                if 'id' not in child_info:
-                    st.error("Error: Child record is missing ID field")
-                    st.stop()
+            if not child_attendance.empty:
+                # Get the child's class group
+                class_group = child_info['class_group']
                 
-                # Get all attendance records for this child
-                child_attendance = attendance_df[attendance_df['child_id'] == child_info['id']]
+                # Define the start date for attendance tracking (March 1, 2025)
+                start_date = pd.Timestamp('2025-03-01')
                 
-                if not child_attendance.empty:
-                    # Get the child's class group
-                    class_group = child_info['class_group']
+                # Check if child has any attendance in March or April 2025
+                march_april_attendance = attendance_df[
+                    (attendance_df['child_id'] == child_info['id']) &
+                    (pd.to_datetime(attendance_df['session_date']).dt.year == 2025) &
+                    (pd.to_datetime(attendance_df['session_date']).dt.month.isin([3, 4]))
+                ]
+                
+                is_new_child = march_april_attendance.empty
+                
+                if is_new_child:
+                    # For new children, use their first attendance date
+                    first_attendance_date = pd.to_datetime(child_attendance['session_date']).min()
+                    st.info(f"📝 New child! First attendance: {first_attendance_date.strftime('%Y-%m-%d')}")
+                else:
+                    # For existing children, use March 1, 2025
+                    first_attendance_date = start_date
+                    st.info("👥 Existing child - Attendance tracked from March 2025")
+                
+                # Get all class sessions since the tracking start date
+                class_sessions = attendance_df[
+                    pd.to_datetime(attendance_df['session_date']) >= first_attendance_date
+                ]['session_date'].unique()
+                total_available_sessions = len(class_sessions)
+                
+                # Get child's attendance records since tracking start date
+                tracked_attendance = child_attendance[
+                    pd.to_datetime(child_attendance['session_date']) >= first_attendance_date
+                ]
+                
+                # Calculate attendance statistics
+                present_count = len(tracked_attendance)
+                absent_count = total_available_sessions - present_count
+                attendance_rate = (present_count / total_available_sessions * 100) if total_available_sessions > 0 else 0
+                
+                # Calculate participation rates based on attended sessions
+                early_rate = (tracked_attendance['early'].sum() / present_count * 100) if present_count > 0 else 0
+                book_rate = (tracked_attendance['has_book'].sum() / present_count * 100) if present_count > 0 else 0
+                pen_rate = (tracked_attendance['has_pen'].sum() / present_count * 100) if present_count > 0 else 0
+                bible_rate = (tracked_attendance['has_bible'].sum() / present_count * 100) if present_count > 0 else 0
+                offering_rate = (tracked_attendance['gave_offering'].sum() / present_count * 100) if present_count > 0 else 0
+                
+                # Display attendance summary
+                st.markdown("#### 📊 Attendance Summary")
+                st.markdown(f"**Tracking Start Date:** {first_attendance_date.strftime('%Y-%m-%d')}")
+                st.markdown(f"**Total Available Sessions:** {total_available_sessions}")
+                
+                # Display metrics in two rows
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Sessions Present", present_count)
+                with col2:
+                    st.metric("Sessions Absent", absent_count)
+                with col3:
+                    st.metric("Attendance Rate", f"{attendance_rate:.1f}%")
+                
+                col1, col2, col3, col4, col5 = st.columns(5)
+                with col1:
+                    st.metric("Early Rate", f"{early_rate:.1f}%")
+                with col2:
+                    st.metric("Book Rate", f"{book_rate:.1f}%")
+                with col3:
+                    st.metric("Pen Rate", f"{pen_rate:.1f}%")
+                with col4:
+                    st.metric("Bible Rate", f"{bible_rate:.1f}%")
+                with col5:
+                    st.metric("Offering Rate", f"{offering_rate:.1f}%")
+                
+                # Show detailed attendance records
+                st.markdown("#### 📅 Detailed Attendance Records")
+                
+                # Create a DataFrame with all sessions since tracking start
+                all_sessions_df = pd.DataFrame({
+                    'session_date': class_sessions
+                })
+                
+                # Merge with actual attendance to get present/absent status
+                detailed_attendance = all_sessions_df.merge(
+                    tracked_attendance[['session_date', 'early', 'has_book', 'has_pen', 'has_bible', 'gave_offering']],
+                    on='session_date',
+                    how='left'
+                )
+                
+                # Fill NaN values (absent days)
+                detailed_attendance = detailed_attendance.fillna(False)
+                
+                # Add status column
+                detailed_attendance['Status'] = np.where(
+                    pd.isna(detailed_attendance['early']),
+                    'Absent',
+                    'Present'
+                )
+                
+                # Format for display
+                display_df = detailed_attendance.copy()
+                display_df['Date'] = pd.to_datetime(display_df['session_date']).dt.strftime('%Y-%m-%d')
+                display_df['Early'] = display_df['early'].map({True: '✅', False: '❌'})
+                display_df['Book'] = display_df['has_book'].map({True: '✅', False: '❌'})
+                display_df['Pen'] = display_df['has_pen'].map({True: '✅', False: '❌'})
+                display_df['Bible'] = display_df['has_bible'].map({True: '✅', False: '❌'})
+                display_df['Offering'] = display_df['gave_offering'].map({True: '✅', False: '❌'})
+                
+                # Sort by date in descending order
+                display_df = display_df.sort_values('session_date', ascending=False)
+                
+                # Display the records
+                st.dataframe(
+                    display_df[['Date', 'Status', 'Early', 'Book', 'Pen', 'Bible', 'Offering']],
+                    use_container_width=True
+                )
+                
+                # Show trends
+                st.markdown("#### 📈 Attendance Trends")
+                
+                # Calculate monthly attendance rates
+                monthly_stats = detailed_attendance.copy()
+                monthly_stats['month'] = pd.to_datetime(monthly_stats['session_date']).dt.strftime('%Y-%m')
+                monthly_attendance = monthly_stats.groupby('month').agg({
+                    'Status': lambda x: (x == 'Present').mean() * 100,
+                    'early': 'mean',
+                    'has_book': 'mean',
+                    'has_pen': 'mean',
+                    'has_bible': 'mean',
+                    'gave_offering': 'mean'
+                }).reset_index()
+                
+                # Multiply by 100 to get percentages
+                for col in ['early', 'has_book', 'has_pen', 'has_bible', 'gave_offering']:
+                    monthly_attendance[col] = monthly_attendance[col] * 100
+                
+                # Rename columns for display
+                monthly_attendance.columns = ['Month', 'Attendance', 'Early', 'Book', 'Pen', 'Bible', 'Offering']
+                
+                # Create line chart
+                st.line_chart(
+                    monthly_attendance.set_index('Month')[['Attendance', 'Early', 'Book', 'Pen', 'Bible', 'Offering']]
+                )
+                
+                # Compare with class averages
+                st.markdown("#### 🔄 Comparison with Class Averages")
+                
+                # Get class attendance data since tracking start date
+                class_attendance = attendance_df[
+                    (attendance_df['child_id'].isin(
+                        children_df[children_df['class_group'] == class_group]['id']
+                    )) &
+                    (pd.to_datetime(attendance_df['session_date']) >= first_attendance_date)
+                ]
+                
+                if not class_attendance.empty:
+                    # Calculate class averages
+                    total_class_children = len(children_df[children_df['class_group'] == class_group])
+                    class_present_rate = (len(class_attendance) / (total_class_children * total_available_sessions) * 100)
+                    class_early_rate = (class_attendance['early'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
+                    class_book_rate = (class_attendance['has_book'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
+                    class_pen_rate = (class_attendance['has_pen'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
+                    class_bible_rate = (class_attendance['has_bible'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
                     
-                    # Define the start date for attendance tracking (March 1, 2025)
-                    start_date = pd.Timestamp('2025-03-01')
-                    
-                    # Check if child has any attendance in March or April 2025
-                    march_april_attendance = attendance_df[
-                        (attendance_df['child_id'] == child_info['id']) &
-                        (pd.to_datetime(attendance_df['session_date']).dt.year == 2025) &
-                        (pd.to_datetime(attendance_df['session_date']).dt.month.isin([3, 4]))
-                    ]
-                    
-                    is_new_child = march_april_attendance.empty
-                    
-                    if is_new_child:
-                        # For new children, use their first attendance date
-                        first_attendance_date = pd.to_datetime(child_attendance['session_date']).min()
-                        st.info(f"📝 New child! First attendance: {first_attendance_date.strftime('%Y-%m-%d')}")
-                    else:
-                        # For existing children, use March 1, 2025
-                        first_attendance_date = start_date
-                        st.info("👥 Existing child - Attendance tracked from March 2025")
-                    
-                    # Get all class sessions since the tracking start date
-                    class_sessions = attendance_df[
-                        pd.to_datetime(attendance_df['session_date']) >= first_attendance_date
-                    ]['session_date'].unique()
-                    total_available_sessions = len(class_sessions)
-                    
-                    # Get child's attendance records since tracking start date
-                    tracked_attendance = child_attendance[
-                        pd.to_datetime(child_attendance['session_date']) >= first_attendance_date
-                    ]
-                    
-                    # Calculate attendance statistics
-                    present_count = len(tracked_attendance)
-                    absent_count = total_available_sessions - present_count
-                    attendance_rate = (present_count / total_available_sessions * 100) if total_available_sessions > 0 else 0
-                    
-                    # Calculate participation rates based on attended sessions
-                    early_rate = (tracked_attendance['early'].sum() / present_count * 100) if present_count > 0 else 0
-                    book_rate = (tracked_attendance['has_book'].sum() / present_count * 100) if present_count > 0 else 0
-                    pen_rate = (tracked_attendance['has_pen'].sum() / present_count * 100) if present_count > 0 else 0
-                    bible_rate = (tracked_attendance['has_bible'].sum() / present_count * 100) if present_count > 0 else 0
-                    offering_rate = (tracked_attendance['gave_offering'].sum() / present_count * 100) if present_count > 0 else 0
-                    
-                    # Display attendance summary
-                    st.markdown("#### 📊 Attendance Summary")
-                    st.markdown(f"**Tracking Start Date:** {first_attendance_date.strftime('%Y-%m-%d')}")
-                    st.markdown(f"**Total Available Sessions:** {total_available_sessions}")
-                    
-                    # Display metrics in two rows
+                    # Display comparison
                     col1, col2, col3 = st.columns(3)
                     with col1:
-                        st.metric("Sessions Present", present_count)
+                        st.metric(
+                            "Attendance vs Class",
+                            f"{attendance_rate:.1f}%",
+                            f"{(attendance_rate - class_present_rate):.1f}%"
+                        )
                     with col2:
-                        st.metric("Sessions Absent", absent_count)
+                        st.metric(
+                            "Early vs Class",
+                            f"{early_rate:.1f}%",
+                            f"{(early_rate - class_early_rate):.1f}%"
+                        )
                     with col3:
-                        st.metric("Attendance Rate", f"{attendance_rate:.1f}%")
-                    
-                    col1, col2, col3, col4, col5 = st.columns(5)
-                    with col1:
-                        st.metric("Early Rate", f"{early_rate:.1f}%")
-                    with col2:
-                        st.metric("Book Rate", f"{book_rate:.1f}%")
-                    with col3:
-                        st.metric("Pen Rate", f"{pen_rate:.1f}%")
-                    with col4:
-                        st.metric("Bible Rate", f"{bible_rate:.1f}%")
-                    with col5:
-                        st.metric("Offering Rate", f"{offering_rate:.1f}%")
-                    
-                    # Show detailed attendance records
-                    st.markdown("#### 📅 Detailed Attendance Records")
-                    
-                    # Create a DataFrame with all sessions since tracking start
-                    all_sessions_df = pd.DataFrame({
-                        'session_date': class_sessions
-                    })
-                    
-                    # Merge with actual attendance to get present/absent status
-                    detailed_attendance = all_sessions_df.merge(
-                        tracked_attendance[['session_date', 'early', 'has_book', 'has_pen', 'has_bible', 'gave_offering']],
-                        on='session_date',
-                        how='left'
-                    )
-                    
-                    # Fill NaN values (absent days)
-                    detailed_attendance = detailed_attendance.fillna(False)
-                    
-                    # Add status column
-                    detailed_attendance['Status'] = np.where(
-                        pd.isna(detailed_attendance['early']),
-                        'Absent',
-                        'Present'
-                    )
-                    
-                    # Format for display
-                    display_df = detailed_attendance.copy()
-                    display_df['Date'] = pd.to_datetime(display_df['session_date']).dt.strftime('%Y-%m-%d')
-                    display_df['Early'] = display_df['early'].map({True: '✅', False: '❌'})
-                    display_df['Book'] = display_df['has_book'].map({True: '✅', False: '❌'})
-                    display_df['Pen'] = display_df['has_pen'].map({True: '✅', False: '❌'})
-                    display_df['Bible'] = display_df['has_bible'].map({True: '✅', False: '❌'})
-                    display_df['Offering'] = display_df['gave_offering'].map({True: '✅', False: '❌'})
-                    
-                    # Sort by date in descending order
-                    display_df = display_df.sort_values('session_date', ascending=False)
-                    
-                    # Display the records
-                    st.dataframe(
-                        display_df[['Date', 'Status', 'Early', 'Book', 'Pen', 'Bible', 'Offering']],
-                        use_container_width=True
-                    )
-                    
-                    # Show trends
-                    st.markdown("#### 📈 Attendance Trends")
-                    
-                    # Calculate monthly attendance rates
-                    monthly_stats = detailed_attendance.copy()
-                    monthly_stats['month'] = pd.to_datetime(monthly_stats['session_date']).dt.strftime('%Y-%m')
-                    monthly_attendance = monthly_stats.groupby('month').agg({
-                        'Status': lambda x: (x == 'Present').mean() * 100,
-                        'early': 'mean',
-                        'has_book': 'mean',
-                        'has_pen': 'mean',
-                        'has_bible': 'mean',
-                        'gave_offering': 'mean'
-                    }).reset_index()
-                    
-                    # Multiply by 100 to get percentages
-                    for col in ['early', 'has_book', 'has_pen', 'has_bible', 'gave_offering']:
-                        monthly_attendance[col] = monthly_attendance[col] * 100
-                    
-                    # Rename columns for display
-                    monthly_attendance.columns = ['Month', 'Attendance', 'Early', 'Book', 'Pen', 'Bible', 'Offering']
-                    
-                    # Create line chart
-                    st.line_chart(
-                        monthly_attendance.set_index('Month')[['Attendance', 'Early', 'Book', 'Pen', 'Bible', 'Offering']]
-                    )
-                    
-                    # Compare with class averages
-                    st.markdown("#### 🔄 Comparison with Class Averages")
-                    
-                    # Get class attendance data since tracking start date
-                    class_attendance = attendance_df[
-                        (attendance_df['child_id'].isin(
-                            children_df[children_df['class_group'] == class_group]['id']
-                        )) &
-                        (pd.to_datetime(attendance_df['session_date']) >= first_attendance_date)
-                    ]
-                    
-                    if not class_attendance.empty:
-                        # Calculate class averages
-                        total_class_children = len(children_df[children_df['class_group'] == class_group])
-                        class_present_rate = (len(class_attendance) / (total_class_children * total_available_sessions) * 100)
-                        class_early_rate = (class_attendance['early'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
-                        class_book_rate = (class_attendance['has_book'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
-                        class_pen_rate = (class_attendance['has_pen'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
-                        class_bible_rate = (class_attendance['has_bible'].sum() / len(class_attendance) * 100) if len(class_attendance) > 0 else 0
-                        
-                        # Display comparison
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric(
-                                "Attendance vs Class",
-                                f"{attendance_rate:.1f}%",
-                                f"{(attendance_rate - class_present_rate):.1f}%"
-                            )
-                        with col2:
-                            st.metric(
-                                "Early vs Class",
-                                f"{early_rate:.1f}%",
-                                f"{(early_rate - class_early_rate):.1f}%"
-                            )
-                        with col3:
-                            st.metric(
-                                "Participation vs Class",
-                                f"{((book_rate + pen_rate + bible_rate) / 3):.1f}%",
-                                f"{((book_rate + pen_rate + bible_rate) / 3 - (class_book_rate + class_pen_rate + class_bible_rate) / 3):.1f}%"
-                            )
-                else:
-                    st.info("No attendance records found for this child")
-            except Exception as e:
-                st.error(f"Error displaying attendance records: {str(e)}")
+                        st.metric(
+                            "Participation vs Class",
+                            f"{((book_rate + pen_rate + bible_rate) / 3):.1f}%",
+                            f"{((book_rate + pen_rate + bible_rate) / 3 - (class_book_rate + class_pen_rate + class_bible_rate) / 3):.1f}%"
+                        )
+            else:
+                st.info("No attendance records found for this child")
+        except Exception as e:
+            st.error(f"Error displaying attendance records: {str(e)}")
         else:
             st.warning("No children found matching the selected criteria!")
     else:
@@ -891,124 +900,124 @@ elif page == "✏️ Edit Profiles":
         if not filtered_df.empty:
             selected_child = st.selectbox("Select a Child", sorted(filtered_df["full_name"].tolist()))
             child_info = filtered_df[filtered_df["full_name"] == selected_child].iloc[0]
+        
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            if st.button("🗑️ Delete Profile"):
+                try:
+                    # Get Supabase client
+                    supabase = get_supabase_client()
+                    if not supabase:
+                        st.error("Could not connect to database")
+                        st.stop()
+                    
+                    # Delete attendance records first (due to foreign key constraint)
+                    supabase.table('attendance').delete().eq('child_id', child_info['id']).execute()
+                    
+                    # Delete child record
+                    supabase.table('children').delete().eq('id', child_info['id']).execute()
+                    
+                    st.success(f"✅ Deleted {selected_child}'s profile and attendance records")
+                    load_children.clear()
+                    load_attendance.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error deleting profile: {str(e)}")
+        
+        with st.form("edit_form"):
+            st.subheader("Edit Information")
             
-            col1, col2 = st.columns([3, 1])
-            with col2:
-                if st.button("🗑️ Delete Profile"):
-                    try:
-                        # Get Supabase client
-                        supabase = get_supabase_client()
-                        if not supabase:
-                            st.error("Could not connect to database")
-                            st.stop()
-                        
-                        # Delete attendance records first (due to foreign key constraint)
-                        supabase.table('attendance').delete().eq('child_id', child_info['id']).execute()
-                        
-                        # Delete child record
-                        supabase.table('children').delete().eq('id', child_info['id']).execute()
-                        
-                        st.success(f"✅ Deleted {selected_child}'s profile and attendance records")
-                        load_children.clear()
-                        load_attendance.clear()
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error deleting profile: {str(e)}")
+            full_name = st.text_input("Full Name", value=child_info["full_name"])
+            gender = st.selectbox(
+                "Gender", 
+                ["", "Male", "Female"],
+                index=["", "Male", "Female"].index(child_info["gender"]) if child_info["gender"] in ["Male", "Female"] else 0
+            )
             
-            with st.form("edit_form"):
-                st.subheader("Edit Information")
-                
-                full_name = st.text_input("Full Name", value=child_info["full_name"])
-                gender = st.selectbox(
-                    "Gender", 
-                    ["", "Male", "Female"],
-                    index=["", "Male", "Female"].index(child_info["gender"]) if child_info["gender"] in ["Male", "Female"] else 0
-                )
-                
-                dob = st.date_input(
-                    "Date of Birth",
-                    value=datetime.strptime(child_info["date_of_birth"], "%Y-%m-%d").date() if child_info["date_of_birth"] else date.today(),
-                    max_value=date.today()
-                )
-                
-                school = st.text_input("School Name", value=child_info["school"])
-                grade = st.selectbox(
-                    "Grade / Form",
-                    [""] + [
-                        "PP1", "PP2", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
-                        "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
-                        "Form 1", "Form 2", "Form 3", "Form 4"
-                    ],
-                    index=[""] + [
-                        "PP1", "PP2", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
-                        "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
-                        "Form 1", "Form 2", "Form 3", "Form 4"
-                    ].index(child_info["grade"]) if child_info["grade"] else 0
-                )
-                
-                class_group = st.selectbox(
-                    "Group/Class",
-                    [
-                        "Chosen Generation(grade PP1–PP2)",
-                        "Chosen Nation(grade 1–3)",
-                        "Priesthood (grade 4–6)",
-                        "Preisthood 2(grade 7–12)",
-                        "Priesthood 2(form 1–4)"
-                    ],
-                    index=[
-                        "Chosen Generation(grade PP1–PP2)",
-                        "Chosen Nation(grade 1–3)",
-                        "Priesthood (grade 4–6)",
-                        "Preisthood 2(grade 7–12)",
-                        "Priesthood 2(form 1–4)"
-                    ].index(child_info["class_group"]) if child_info["class_group"] else 0
-                )
-                
-                residence = st.text_input("Residence", value=child_info["residence"])
-                parent1 = st.text_input("Parent/Guardian 1", value=child_info["parent1_name"])
-                contact1 = st.text_input("Contact 1", value=child_info["parent1_contact"])
-                parent2 = st.text_input("Parent/Guardian 2", value=child_info["parent2_name"])
-                contact2 = st.text_input("Contact 2", value=child_info["parent2_contact"])
+            dob = st.date_input(
+                "Date of Birth",
+                value=datetime.strptime(child_info["date_of_birth"], "%Y-%m-%d").date() if child_info["date_of_birth"] else date.today(),
+                max_value=date.today()
+            )
+            
+            school = st.text_input("School Name", value=child_info["school"])
+            grade = st.selectbox(
+                "Grade / Form",
+                [""] + [
+                    "PP1", "PP2", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
+                    "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
+                    "Form 1", "Form 2", "Form 3", "Form 4"
+                ],
+                index=[""] + [
+                    "PP1", "PP2", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
+                    "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
+                    "Form 1", "Form 2", "Form 3", "Form 4"
+                ].index(child_info["grade"]) if child_info["grade"] else 0
+            )
+            
+            class_group = st.selectbox(
+                "Group/Class",
+                [
+                    "Chosen Generation(grade PP1–PP2)",
+                    "Chosen Nation(grade 1–3)",
+                    "Priesthood (grade 4–6)",
+                    "Preisthood 2(grade 7–12)",
+                    "Priesthood 2(form 1–4)"
+                ],
+                index=[
+                    "Chosen Generation(grade PP1–PP2)",
+                    "Chosen Nation(grade 1–3)",
+                    "Priesthood (grade 4–6)",
+                    "Preisthood 2(grade 7–12)",
+                    "Priesthood 2(form 1–4)"
+                ].index(child_info["class_group"]) if child_info["class_group"] else 0
+            )
+            
+            residence = st.text_input("Residence", value=child_info["residence"])
+            parent1 = st.text_input("Parent/Guardian 1", value=child_info["parent1_name"])
+            contact1 = st.text_input("Contact 1", value=child_info["parent1_contact"])
+            parent2 = st.text_input("Parent/Guardian 2", value=child_info["parent2_name"])
+            contact2 = st.text_input("Contact 2", value=child_info["parent2_contact"])
                 sponsored = st.checkbox("Sponsored by OCM", value=child_info["sponsored"])
-                
-                submitted = st.form_submit_button("💾 Save Changes")
-                
-                if submitted:
-                    try:
-                        # Prepare updated record
-                        updated_record = {
-                            "full_name": full_name,
-                            "gender": gender,
-                            "date_of_birth": dob.isoformat(),
-                            "school": school,
-                            "grade": grade,
-                            "class_group": class_group,
-                            "residence": residence,
-                            "parent1_name": parent1,
-                            "parent1_contact": contact1,
-                            "parent2_name": parent2,
-                            "parent2_contact": contact2,
-                            "sponsored": sponsored
-                        }
-                        
+            
+            submitted = st.form_submit_button("💾 Save Changes")
+            
+            if submitted:
+                try:
+                    # Prepare updated record
+                    updated_record = {
+                        "full_name": full_name,
+                        "gender": gender,
+                        "date_of_birth": dob.isoformat(),
+                        "school": school,
+                        "grade": grade,
+                        "class_group": class_group,
+                        "residence": residence,
+                        "parent1_name": parent1,
+                        "parent1_contact": contact1,
+                        "parent2_name": parent2,
+                        "parent2_contact": contact2,
+                        "sponsored": sponsored
+                    }
+                    
                         # Update using Supabase
                         supabase = get_supabase_client()
                         if not supabase:
                             st.error("Could not connect to database")
                             st.stop()
-                            
+                    
                         # Update child record
                         response = supabase.table('children').update(updated_record).eq('id', child_info['id']).execute()
                         
                         if response.data:
-                            st.success("✅ Profile updated successfully!")
-                            load_children.clear()
+                    st.success("✅ Profile updated successfully!")
+                    load_children.clear()
                             st.rerun()
                         else:
                             st.error("Failed to update profile")
                             
-                    except Exception as e:
-                        st.error(f"Error updating profile: {str(e)}")
+                except Exception as e:
+                    st.error(f"Error updating profile: {str(e)}")
         else:
             st.warning("No children found matching the selected criteria!")
     else:
