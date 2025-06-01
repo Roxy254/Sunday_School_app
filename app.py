@@ -988,8 +988,7 @@ elif page == "✏️ Edit Profiles":
                             "parent1_contact": contact1,
                             "parent2_name": parent2,
                             "parent2_contact": contact2,
-                            "sponsored": sponsored,
-                            "updated_at": datetime.now().isoformat()
+                            "sponsored": sponsored
                         }
                         
                         # Update using Supabase
