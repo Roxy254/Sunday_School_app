@@ -881,26 +881,24 @@ elif page == "👤 Profile":
 
 elif page == "✏️ Edit Profiles":
     st.title("✏️ Edit or Delete Child Profile")
-    
+
     if not children_df.empty:
-        # Add class filter
-        class_options = ["All Classes"] + sorted(children_df["class_group"].unique().tolist())
+        # Class filter dropdown
+        class_options = ["All Classes"] + sorted(children_df["class_group"].dropna().unique().tolist())
         selected_class = st.selectbox("Select Class", class_options)
-        
-        # Filter children by class if a specific class is selected
+
+        # Filter by selected class
         filtered_df = children_df if selected_class == "All Classes" else children_df[children_df["class_group"] == selected_class]
-        
-        # Add search box
+
+        # Search by name
         search_name = st.text_input("Search by Name", "")
-        
-        # Filter by search if provided
         if search_name:
             filtered_df = filtered_df[filtered_df["full_name"].str.lower().str.contains(search_name.lower())]
-        
+
         if not filtered_df.empty:
             selected_child = st.selectbox("Select a Child", sorted(filtered_df["full_name"].tolist()))
             child_info = filtered_df[filtered_df["full_name"] == selected_child].iloc[0]
-        
+
             col1, col2 = st.columns([3, 1])
             with col2:
                 if st.button("🗑️ Delete Profile"):
@@ -909,23 +907,105 @@ elif page == "✏️ Edit Profiles":
                         if not supabase:
                             st.error("Could not connect to database")
                             st.stop()
-                        
-                        # Delete attendance records first
-                        supabase.table('attendance').delete().eq('child_id', child_info['id']).execute()
-                        supabase.table('children').delete().eq('id', child_info['id']).execute()
-                        
+
+                        # Delete attendance first
+                        supabase.table("attendance").delete().eq("child_id", child_info["id"]).execute()
+                        # Then delete child profile
+                        supabase.table("children").delete().eq("id", child_info["id"]).execute()
+
                         st.success(f"✅ Deleted {selected_child}'s profile and attendance records")
                         load_children.clear()
                         load_attendance.clear()
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error deleting profile: {str(e)}")
-            
+
             with st.form("edit_form"):
                 st.subheader("Edit Information")
-                
+
                 full_name = st.text_input("Full Name", value=child_info["full_name"])
                 gender = st.selectbox(
-                    "Gender", 
+                    "Gender",
                     ["", "Male", "Female"],
-                    index=["", "Male", "Female"].index(child_info["gender"]) if child_info["gender"]()
+                    index=["", "Male", "Female"].index(child_info["gender"]) if child_info["gender"] in ["Male", "Female"] else 0
+                )
+
+                dob = st.date_input(
+                    "Date of Birth",
+                    value=datetime.strptime(child_info["date_of_birth"], "%Y-%m-%d").date() if child_info["date_of_birth"] else date.today(),
+                    max_value=date.today()
+                )
+
+                school = st.text_input("School Name", value=child_info["school"])
+
+                grade_list = [
+                    "PP1", "PP2", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
+                    "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
+                    "Form 1", "Form 2", "Form 3", "Form 4"
+                ]
+                grade = st.selectbox(
+                    "Grade / Form",
+                    [""] + grade_list,
+                    index=([""] + grade_list).index(child_info["grade"]) if child_info["grade"] in grade_list else 0
+                )
+
+                class_group_list = [
+                    "Chosen Generation(grade PP1–PP2)",
+                    "Chosen Nation(grade 1–3)",
+                    "Priesthood (grade 4–6)",
+                    "Preisthood 2(grade 7–12)",
+                    "Priesthood 2(form 1–4)"
+                ]
+                class_group = st.selectbox(
+                    "Group/Class",
+                    class_group_list,
+                    index=class_group_list.index(child_info["class_group"]) if child_info["class_group"] in class_group_list else 0
+                )
+
+                residence = st.text_input("Residence", value=child_info["residence"])
+                parent1 = st.text_input("Parent/Guardian 1", value=child_info["parent1_name"])
+                contact1 = st.text_input("Contact 1", value=child_info["parent1_contact"])
+                parent2 = st.text_input("Parent/Guardian 2", value=child_info["parent2_name"])
+                contact2 = st.text_input("Contact 2", value=child_info["parent2_contact"])
+                sponsored = st.checkbox("Sponsored by OCM", value=child_info["sponsored"])
+
+                submitted = st.form_submit_button("💾 Save Changes")
+
+                if submitted:
+                    try:
+                        updated_record = {
+                            "full_name": full_name,
+                            "gender": gender,
+                            "date_of_birth": dob.isoformat(),
+                            "school": school,
+                            "grade": grade,
+                            "class_group": class_group,
+                            "residence": residence,
+                            "parent1_name": parent1,
+                            "parent1_contact": contact1,
+                            "parent2_name": parent2,
+                            "parent2_contact": contact2,
+                            "sponsored": sponsored
+                        }
+
+                        supabase = get_supabase_client()
+                        if not supabase:
+                            st.error("Could not connect to database")
+                            st.stop()
+
+                        response = supabase.table("children").update(updated_record).eq("id", child_info["id"]).execute()
+
+                        if response.data:
+                            st.success("✅ Profile updated successfully!")
+                            load_children.clear()
+                            st.rerun()
+                        else:
+                            st.error("Failed to update profile")
+
+                    except Exception as e:
+                        st.error(f"Error updating profile: {str(e)}")
+
+        else:
+            st.warning("No children found matching the selected criteria!")
+    else:
+        st.warning("No children registered yet!")
